@@ -46,7 +46,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
       return false;
-    } catch {
+    } catch (error) {
+      // Bubble up connectivity problems so the UI can show a clear message
+      if (error instanceof ApiError && error.status === 404) {
+        throw error;
+      }
       return false;
     }
   };

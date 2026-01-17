@@ -1,7 +1,6 @@
 // API Service Layer for SCADA Backend Communication
-
-const API_BASE = '/api';
-
+const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_ORIGIN || '').replace(/\/$/, '');
+const API_BASE = `${BACKEND_ORIGIN}/api`;
 interface LoginCredentials {
   username: string;
   password: string;
@@ -108,13 +107,19 @@ class ApiError extends Error {
 }
 
 async function fetchWithAuth<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const headers: HeadersInit = {
+    ...options?.headers,
+  };
+
+  // Only set JSON content-type when we're not sending FormData
+  if (!(options?.body instanceof FormData) && !('Content-Type' in headers)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (response.status === 401) {
@@ -135,12 +140,16 @@ export const api = {
     formData.append('username', credentials.username);
     formData.append('password', credentials.password);
 
-    const response = await fetch('/login', {
+    const response = await fetch(`${BACKEND_ORIGIN}/login`, {
       method: 'POST',
       body: formData,
       credentials: 'include',
       redirect: 'manual',
     });
+
+    if (response.status === 404) {
+      throw new ApiError(404, 'Backend not reachable (missing /login route)');
+    }
 
     // Flask redirects on success
     if (response.type === 'opaqueredirect' || response.status === 302 || response.status === 200) {
@@ -151,7 +160,7 @@ export const api = {
   },
 
   async logout(): Promise<void> {
-    await fetch('/logout', { credentials: 'include' });
+    await fetch(`${BACKEND_ORIGIN}/logout`, { credentials: 'include' });
   },
 
   // System State

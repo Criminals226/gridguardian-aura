@@ -17,13 +17,18 @@ export default function Login() {
     setError('');
     setIsLoading(true);
 
-    const success = await login(username, password);
-    
-    if (!success) {
-      setError('Invalid credentials. Please try again.');
+    try {
+      const success = await login(username, password);
+
+      if (!success) {
+        setError('Invalid credentials. Please try again.');
+      }
+    } catch {
+      // Most common cause in Lovable preview/publish: Flask backend is not running behind the same origin
+      setError('Backend not reachable. Start the Flask server and connect the frontend to it.');
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
