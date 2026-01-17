@@ -126,7 +126,7 @@ export default function Security() {
           title="Active Indicators"
           value={securityStatus?.threat_intel?.total_indicators ?? 0}
           icon={ShieldCheck}
-          status={securityStatus?.threat_intel?.enabled ? 'normal' : 'offline'}
+          status={securityStatus?.threat_intel?.enabled ? 'normal' : 'warning'}
         />
       </div>
 
