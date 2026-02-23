@@ -7,6 +7,7 @@ import { GaugeCircular } from '@/components/scada/GaugeCircular';
 import { MeterBar } from '@/components/scada/MeterBar';
 import { AreaSwitch } from '@/components/scada/AreaSwitch';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
+import { ScadaDiagram } from '@/components/scada/ScadaDiagram';
 import { 
   Zap, 
   Gauge, 
@@ -70,6 +71,13 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* SCADA System Diagram */}
+      <ScadaDiagram 
+        state={state} 
+        isConnected={isConnected} 
+        mqttConnected={mqttConnected || state?.mqtt_connected} 
+      />
 
       {/* Main metrics row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
