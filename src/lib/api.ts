@@ -27,6 +27,8 @@ interface SystemState {
   mqtt_connected: boolean;
   attack_score: number;
   threat_intel_active: boolean;
+  price_rate: number;
+  last_update: string;
 }
 
 interface SecurityStatus {
@@ -194,6 +196,14 @@ export const api = {
   // Statistics
   async getStats(): Promise<StatsResponse> {
     return fetchWithAuth<StatsResponse>('/get_stats');
+  },
+
+  // Control commands (toggle areas, simulate attack, reset)
+  async sendControl(action: string): Promise<{ success: boolean; message?: string }> {
+    return fetchWithAuth<{ success: boolean; message?: string }>('/control', {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
   },
 };
 

@@ -1,6 +1,6 @@
 """
 Smart Grid SCADA Backend Server
-This Flask server provides all API endpoints required by the React frontend.
+Connects to real MQTT hardware via broker.hivemq.com
 Run with: python web_scada.py
 """
 
@@ -17,6 +17,13 @@ from flask_socketio import SocketIO, emit
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
+try:
+    import paho.mqtt.client as mqtt
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
+    print("⚠️  paho-mqtt not installed. Run: pip install paho-mqtt")
+
 # ─────────────────────────────────────────────────────────────
 # Flask App Configuration
 # ─────────────────────────────────────────────────────────────
@@ -27,6 +34,17 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# ─────────────────────────────────────────────────────────────
+# MQTT Configuration (matches your hardware setup)
+# ─────────────────────────────────────────────────────────────
+BROKER = "broker.hivemq.com"
+PORT = 1883
+TOPIC_ROOT = "fyp_grid_99/#"
+TOPIC_CONTROL = "fyp_grid_99/grid/control"
+TOPIC_BILL = "fyp_grid_99/meter/bill"
+
+mqtt_client = None
 
 # ─────────────────────────────────────────────────────────────
 # Database Models
@@ -75,23 +93,25 @@ class AuditLog(db.Model):
 
 
 # ─────────────────────────────────────────────────────────────
-# System State (in-memory, updated by simulation)
+# System State (updated by real MQTT hardware data)
 # ─────────────────────────────────────────────────────────────
 system_state = {
-    'gen_mw': 450.0,
-    'gen_rpm': 3000,
-    'status': 'online',
-    'load_mw': 420.0,
-    'voltage': 230.5,
-    'frequency': 50.02,
-    'area1': 'closed',
-    'area2': 'closed',
-    'calculated_bill': 12500.00,
-    'security_level': 'normal',
+    'gen_mw': 0.0,
+    'gen_rpm': 0,
+    'status': 'WAITING',
+    'load_mw': 0.0,
+    'voltage': 0.0,
+    'frequency': 0.0,
+    'area1': 'OFF',
+    'area2': 'OFF',
+    'calculated_bill': 0.0,
+    'security_level': 'NORMAL',
     'system_locked': False,
-    'mqtt_connected': True,
+    'mqtt_connected': False,
     'attack_score': 0,
     'threat_intel_active': True,
+    'price_rate': 0.25,
+    'last_update': 'Connecting...',
 }
 
 security_stats = {
@@ -105,6 +125,62 @@ threat_intel = {
     'total_indicators': 1250,
     'last_refresh': datetime.utcnow().isoformat(),
 }
+
+# ─────────────────────────────────────────────────────────────
+# MQTT Callbacks (real hardware data)
+# ─────────────────────────────────────────────────────────────
+def on_mqtt_connect(client, userdata, flags, rc):
+    print(f"✅ Connected to MQTT Broker (RC: {rc})")
+    client.subscribe(TOPIC_ROOT)
+    system_state['mqtt_connected'] = True
+    system_state['last_update'] = time.strftime("%H:%M:%S")
+    socketio.emit('mqtt_status', {'connected': True})
+
+
+def on_mqtt_disconnect(client, userdata, rc):
+    print(f"❌ MQTT Disconnected (RC: {rc})")
+    system_state['mqtt_connected'] = False
+    socketio.emit('mqtt_status', {'connected': False})
+
+
+def on_mqtt_message(client, userdata, msg):
+    try:
+        payload = msg.payload.decode()
+        data = json.loads(payload)
+        system_state['last_update'] = time.strftime("%H:%M:%S")
+
+        if "plant" in msg.topic:
+            # Power plant data from ESP32/hardware
+            system_state['gen_mw'] = float(data.get('gen', 0))
+            system_state['gen_rpm'] = int(data.get('rpm', 0))
+            system_state['status'] = data.get('status', 'OK')
+            # Derive voltage/frequency from generation if available
+            if 'voltage' in data:
+                system_state['voltage'] = float(data['voltage'])
+            if 'frequency' in data:
+                system_state['frequency'] = float(data['frequency'])
+
+        elif "meter/data" in msg.topic:
+            # Smart meter load data
+            system_state['load_mw'] = float(data.get('load', 0))
+
+        elif "grid/control" in msg.topic:
+            # ESP32 feedback = single source of truth for area states
+            if 'area1' in data:
+                system_state['area1'] = data['area1']
+            if 'area2' in data:
+                system_state['area2'] = data['area2']
+
+        elif "meter/bill" in msg.topic:
+            if 'bill' in data:
+                system_state['calculated_bill'] = float(data['bill'])
+
+        # Broadcast updated state to all web clients
+        socketio.emit('state_update', system_state)
+
+    except Exception as e:
+        print(f"⚠️ MQTT parse error: {e}")
+
 
 # ─────────────────────────────────────────────────────────────
 # Authentication Helpers
@@ -143,7 +219,7 @@ def login():
         session['role'] = user.role
         add_audit_log('LOGIN', username, {'ip': request.remote_addr})
         return redirect('/')
-    
+
     return jsonify({'error': 'Invalid credentials'}), 401
 
 
@@ -162,6 +238,58 @@ def logout():
 @login_required
 def get_state():
     return jsonify(system_state)
+
+
+@app.route('/api/control', methods=['POST'])
+@login_required
+def control():
+    """Send control commands to hardware via MQTT."""
+    data = request.get_json()
+    action = data.get('action')
+
+    if action == 'toggle_area1':
+        new_val = 'OFF' if system_state['area1'] == 'ON' else 'ON'
+        send_mqtt_control('area1', new_val)
+        add_audit_log('TOGGLE_AREA1', session.get('username', 'unknown'), {'new_state': new_val})
+        return jsonify({'success': True, 'area1': new_val})
+
+    elif action == 'toggle_area2':
+        new_val = 'OFF' if system_state['area2'] == 'ON' else 'ON'
+        send_mqtt_control('area2', new_val)
+        add_audit_log('TOGGLE_AREA2', session.get('username', 'unknown'), {'new_state': new_val})
+        return jsonify({'success': True, 'area2': new_val})
+
+    elif action == 'simulate_attack':
+        system_state['price_rate'] = 50.0
+        system_state['attack_score'] = min(100, system_state['attack_score'] + 60)
+        system_state['security_level'] = 'CRITICAL'
+        add_audit_log('SIMULATE_ATTACK', session.get('username', 'unknown'))
+        socketio.emit('state_update', system_state)
+        return jsonify({'success': True, 'message': 'Attack simulated'})
+
+    elif action == 'reset_price':
+        system_state['price_rate'] = 0.25
+        system_state['attack_score'] = 0
+        system_state['security_level'] = 'NORMAL'
+        add_audit_log('RESET_PRICE', session.get('username', 'unknown'))
+        socketio.emit('state_update', system_state)
+        return jsonify({'success': True, 'message': 'Price reset'})
+
+    return jsonify({'error': 'Unknown action'}), 400
+
+
+def send_mqtt_control(area, value):
+    """Send control command to ESP32 via MQTT."""
+    global mqtt_client
+    if mqtt_client and system_state['mqtt_connected']:
+        payload = json.dumps({area: value})
+        mqtt_client.publish(TOPIC_CONTROL, payload, qos=1)
+        print(f"📤 MQTT Control: {area} → {value}")
+    else:
+        # If MQTT not connected, update state directly for demo
+        system_state[area] = value
+        socketio.emit('state_update', system_state)
+        print(f"⚠️ MQTT offline, updated state locally: {area} → {value}")
 
 
 @app.route('/api/v1/security-status')
@@ -189,7 +317,6 @@ def get_historical_data():
         start = datetime.utcnow() - timedelta(hours=1)
         end = datetime.utcnow()
 
-    # Query database
     data = GridData.query.filter(
         GridData.timestamp >= start,
         GridData.timestamp <= end
@@ -294,117 +421,67 @@ def handle_disconnect():
 
 
 # ─────────────────────────────────────────────────────────────
-# Background Simulation Thread
+# Background Billing Thread (matches your original logic)
 # ─────────────────────────────────────────────────────────────
-def simulation_thread():
-    """Simulates real-time grid data and occasional threats."""
+def billing_thread():
+    """Background billing calculation — publishes bill via MQTT."""
     with app.app_context():
         while True:
-            # Update system state with slight variations
-            system_state['gen_mw'] = max(0, min(1000, system_state['gen_mw'] + random.uniform(-5, 5)))
-            system_state['load_mw'] = max(0, min(1000, system_state['load_mw'] + random.uniform(-3, 3)))
-            system_state['voltage'] = max(200, min(250, system_state['voltage'] + random.uniform(-0.5, 0.5)))
-            system_state['frequency'] = max(49.5, min(50.5, system_state['frequency'] + random.uniform(-0.02, 0.02)))
-            system_state['gen_rpm'] = int(3000 + random.uniform(-50, 50))
+            # Bill calculation: (load_watts / 1000) * price_rate * interval
+            cost = (system_state['load_mw'] / 1000.0) * system_state['price_rate'] * 0.05
+            system_state['calculated_bill'] += cost
 
-            # Decay attack score
+            # Publish bill to MQTT
+            if mqtt_client and system_state['mqtt_connected']:
+                try:
+                    payload = json.dumps({'bill': round(system_state['calculated_bill'], 2)})
+                    mqtt_client.publish(TOPIC_BILL, payload)
+                except:
+                    pass
+
+            # Decay attack score over time
             if system_state['attack_score'] > 0:
-                system_state['attack_score'] = max(0, system_state['attack_score'] - 1)
+                system_state['attack_score'] = max(0, system_state['attack_score'] - 0.5)
 
             # Update security level based on attack score
             score = system_state['attack_score']
             if score >= 70:
-                system_state['security_level'] = 'critical'
+                system_state['security_level'] = 'CRITICAL'
             elif score >= 40:
-                system_state['security_level'] = 'elevated'
+                system_state['security_level'] = 'WARNING'
             else:
-                system_state['security_level'] = 'normal'
+                system_state['security_level'] = 'NORMAL'
 
-            # Record historical data every 10 seconds
+            # Record historical data periodically
             if random.random() < 0.1:
-                grid_data = GridData(
-                    gen_mw=system_state['gen_mw'],
-                    load_mw=system_state['load_mw'],
-                    voltage=system_state['voltage'],
-                    frequency=system_state['frequency'],
-                    security_level=system_state['security_level'],
-                    attack_score=system_state['attack_score'],
-                )
-                db.session.add(grid_data)
-                db.session.commit()
+                try:
+                    grid_data = GridData(
+                        gen_mw=system_state['gen_mw'],
+                        load_mw=system_state['load_mw'],
+                        voltage=system_state['voltage'],
+                        frequency=system_state['frequency'],
+                        security_level=system_state['security_level'],
+                        attack_score=system_state['attack_score'],
+                    )
+                    db.session.add(grid_data)
+                    db.session.commit()
+                except:
+                    pass
 
-            # Simulate occasional threat (1% chance per second)
-            if random.random() < 0.01:
-                simulate_threat()
+            security_stats['total_inspected'] += random.randint(1, 5)
 
-            security_stats['total_inspected'] += random.randint(10, 50)
-
-            # Broadcast state update via Socket.IO
+            # Broadcast state to all web clients
             socketio.emit('state_update', system_state)
 
             time.sleep(1)
-
-
-def simulate_threat():
-    """Generate a simulated threat event."""
-    categories = ['network', 'protocol', 'authentication', 'injection']
-    subcategories = {
-        'network': ['port_scan', 'dos_attempt', 'suspicious_traffic'],
-        'protocol': ['modbus_violation', 'dnp3_anomaly', 'iec104_malformed'],
-        'authentication': ['brute_force', 'invalid_token', 'session_hijack'],
-        'injection': ['sql_injection', 'command_injection', 'buffer_overflow'],
-    }
-    severities = ['low', 'medium', 'high', 'critical']
-    severity_weights = [0.4, 0.3, 0.2, 0.1]
-
-    category = random.choice(categories)
-    subcategory = random.choice(subcategories[category])
-    severity = random.choices(severities, severity_weights)[0]
-
-    # Increase attack score based on severity
-    score_increase = {'low': 5, 'medium': 15, 'high': 30, 'critical': 50}
-    system_state['attack_score'] = min(100, system_state['attack_score'] + score_increase[severity])
-
-    security_stats['total_blocked'] += 1
-    if random.random() < 0.3:
-        security_stats['threat_intel_blocks'] += 1
-
-    # Log the threat
-    threat = ThreatLog(
-        decision_id=f'DEC-{random.randint(10000, 99999)}',
-        action='BLOCK',
-        layer='Security Engine',
-        category=category,
-        subcategory=subcategory,
-        severity=severity,
-        explanation=f'Detected {subcategory.replace("_", " ")} attempt from suspicious source.',
-        metadata_json=json.dumps({'source_ip': f'192.168.{random.randint(1,255)}.{random.randint(1,255)}'}),
-    )
-    db.session.add(threat)
-    db.session.commit()
-
-    # Emit threat event to all connected clients
-    socketio.emit('threat_detected', {
-        'id': threat.id,
-        'layer': threat.layer,
-        'threat': {
-            'category': category,
-            'subcategory': subcategory,
-            'severity': severity,
-        },
-        'explanation': threat.explanation,
-        'timestamp': threat.timestamp.isoformat(),
-    })
 
 
 # ─────────────────────────────────────────────────────────────
 # Database Initialization
 # ─────────────────────────────────────────────────────────────
 def init_db():
-    """Initialize database with default users and sample data."""
     db.create_all()
 
-    # Create default users if they don't exist
     if not User.query.filter_by(username='admin').first():
         admin = User(
             username='admin',
@@ -425,23 +502,6 @@ def init_db():
 
     db.session.commit()
 
-    # Seed some historical data if empty
-    if GridData.query.count() == 0:
-        now = datetime.utcnow()
-        for i in range(60):
-            ts = now - timedelta(minutes=60-i)
-            data = GridData(
-                timestamp=ts,
-                gen_mw=400 + random.uniform(-50, 50),
-                load_mw=380 + random.uniform(-30, 30),
-                voltage=230 + random.uniform(-5, 5),
-                frequency=50 + random.uniform(-0.1, 0.1),
-                security_level='normal',
-                attack_score=random.uniform(0, 20),
-            )
-            db.session.add(data)
-        db.session.commit()
-
 
 # ─────────────────────────────────────────────────────────────
 # Main Entry Point
@@ -451,14 +511,35 @@ if __name__ == '__main__':
         init_db()
         print("✅ Database initialized")
 
-    # Start simulation thread
-    sim_thread = threading.Thread(target=simulation_thread, daemon=True)
-    sim_thread.start()
-    print("🔄 Simulation thread started")
+    # Start MQTT connection to real hardware broker
+    if MQTT_AVAILABLE:
+        mqtt_client = mqtt.Client()
+        mqtt_client.on_connect = on_mqtt_connect
+        mqtt_client.on_disconnect = on_mqtt_disconnect
+        mqtt_client.on_message = on_mqtt_message
 
-    print("🚀 Starting SCADA Server on http://localhost:5000")
+        try:
+            mqtt_client.connect(BROKER, PORT, 60)
+            mqtt_client.loop_start()
+            print(f"🔌 Connecting to MQTT broker: {BROKER}:{PORT}")
+            print(f"📡 Subscribing to: {TOPIC_ROOT}")
+        except Exception as e:
+            print(f"⚠️ MQTT connection failed: {e}")
+            print("   Server will run without MQTT (demo mode)")
+    else:
+        print("⚠️ Running without MQTT (install paho-mqtt for hardware integration)")
+
+    # Start billing/monitoring thread
+    bill_thread = threading.Thread(target=billing_thread, daemon=True)
+    bill_thread.start()
+    print("💰 Billing thread started")
+
+    print("\n🚀 Starting SCADA Server on http://localhost:5000")
     print("📋 Default credentials:")
-    print("   Admin: admin / admin123")
+    print("   Admin:    admin / admin123")
     print("   Operator: operator / operator123")
+    print(f"\n📡 MQTT Broker: {BROKER}:{PORT}")
+    print(f"📡 Topics: {TOPIC_ROOT}")
+    print(f"📡 Control: {TOPIC_CONTROL}")
 
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
