@@ -1,33 +1,44 @@
 import { cn } from '@/lib/utils';
-import { Power } from 'lucide-react';
+import { Power, Loader2 } from 'lucide-react';
 
 interface AreaSwitchProps {
   name: string;
   state: 'ON' | 'OFF' | string;
   className?: string;
+  onToggle?: () => void;
+  loading?: boolean;
 }
 
-export function AreaSwitch({ name, state, className }: AreaSwitchProps) {
+export function AreaSwitch({ name, state, className, onToggle, loading }: AreaSwitchProps) {
   const isOn = state === 'ON';
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={loading}
       className={cn(
-        'relative flex items-center justify-between p-3 rounded border transition-all',
+        'relative flex items-center justify-between p-3 rounded border transition-all w-full text-left',
         isOn
           ? 'border-scada-normal/50 bg-scada-normal/10 glow-normal'
           : 'border-scada-offline/30 bg-secondary/50',
+        onToggle && 'cursor-pointer hover:brightness-110 active:scale-[0.98]',
+        loading && 'opacity-60',
         className
       )}
     >
       {/* Area name */}
       <div className="flex items-center gap-3">
-        <Power
-          className={cn(
-            'h-5 w-5 transition-colors',
-            isOn ? 'text-scada-normal' : 'text-scada-offline'
-          )}
-        />
+        {loading ? (
+          <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+        ) : (
+          <Power
+            className={cn(
+              'h-5 w-5 transition-colors',
+              isOn ? 'text-scada-normal' : 'text-scada-offline'
+            )}
+          />
+        )}
         <div>
           <span className="text-sm font-mono font-medium">{name}</span>
           <div className="text-xs text-muted-foreground">Distribution Zone</div>
@@ -60,6 +71,6 @@ export function AreaSwitch({ name, state, className }: AreaSwitchProps) {
           {state}
         </span>
       </div>
-    </div>
+    </button>
   );
 }

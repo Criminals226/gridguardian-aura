@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, SystemState, SecurityStatus } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -8,6 +8,7 @@ import { MeterBar } from '@/components/scada/MeterBar';
 import { AreaSwitch } from '@/components/scada/AreaSwitch';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
 import { ScadaDiagram } from '@/components/scada/ScadaDiagram';
+import { toast } from 'sonner';
 import { 
   Zap, 
   Gauge, 
@@ -15,11 +16,14 @@ import {
   DollarSign, 
   Radio,
   Server,
-  Cpu
+  Cpu,
+  AlertTriangle,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function Dashboard() {
   const { lastState, isConnected, mqttConnected } = useSocket();
+  const [loadingControl, setLoadingControl] = useState<string | null>(null);
   
   // Fetch state via polling as fallback
   const { data: apiState } = useQuery({
@@ -44,6 +48,18 @@ export default function Dashboard() {
       case 'CRITICAL': return 'critical';
       case 'WARNING': return 'warning';
       default: return 'normal';
+    }
+  };
+
+  const handleControl = async (action: string) => {
+    setLoadingControl(action);
+    try {
+      await api.sendControl(action);
+      toast.success(`Command sent: ${action.replace('_', ' ')}`);
+    } catch {
+      toast.error('Failed to send command');
+    } finally {
+      setLoadingControl(null);
     }
   };
 
@@ -177,12 +193,50 @@ export default function Dashboard() {
             Distribution Areas
           </h2>
           <div className="space-y-4">
-            <AreaSwitch name="Area 1" state={state?.area1 ?? 'OFF'} />
-            <AreaSwitch name="Area 2" state={state?.area2 ?? 'OFF'} />
+            <AreaSwitch
+              name="Area 1"
+              state={state?.area1 ?? 'OFF'}
+              onToggle={() => handleControl('toggle_area1')}
+              loading={loadingControl === 'toggle_area1'}
+            />
+            <AreaSwitch
+              name="Area 2"
+              state={state?.area2 ?? 'OFF'}
+              onToggle={() => handleControl('toggle_area2')}
+              loading={loadingControl === 'toggle_area2'}
+            />
           </div>
           
-          <div className="mt-6 pt-4 border-t border-border">
+          {/* Control buttons */}
+          <div className="mt-4 pt-4 border-t border-border space-y-2">
+            <button
+              onClick={() => handleControl('simulate_attack')}
+              disabled={loadingControl === 'simulate_attack'}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded border border-destructive/50 bg-destructive/10 text-destructive text-xs font-mono hover:bg-destructive/20 transition-colors"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Simulate Attack
+            </button>
+            <button
+              onClick={() => handleControl('reset_price')}
+              disabled={loadingControl === 'reset_price'}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded border border-scada-normal/50 bg-scada-normal/10 text-scada-normal text-xs font-mono hover:bg-scada-normal/20 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset Price / Clear Attack
+            </button>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-border">
             <div className="flex items-center justify-between text-sm font-mono">
+              <span className="text-muted-foreground">Price Rate</span>
+              <span className="text-foreground">${state?.price_rate?.toFixed(2) ?? '0.25'}/unit</span>
+            </div>
+            <div className="flex items-center justify-between text-sm font-mono mt-2">
+              <span className="text-muted-foreground">Last Update</span>
+              <span className="text-foreground">{state?.last_update ?? '--:--:--'}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm font-mono mt-2">
               <span className="text-muted-foreground">System Lock</span>
               <StatusIndicator 
                 status={state?.system_locked ? 'critical' : 'normal'}
