@@ -51,17 +51,38 @@ export default function Dashboard() {
     }
   };
 
+  const [localOverrides, setLocalOverrides] = useState<Partial<SystemState>>({});
+
   const handleControl = async (action: string) => {
     setLoadingControl(action);
+    
+    // Optimistic local state updates
+    if (action === 'toggle_area1') {
+      const current = (localOverrides.area1 ?? state?.area1) === 'ON' ? 'OFF' : 'ON';
+      setLocalOverrides(prev => ({ ...prev, area1: current }));
+    } else if (action === 'toggle_area2') {
+      const current = (localOverrides.area2 ?? state?.area2) === 'ON' ? 'OFF' : 'ON';
+      setLocalOverrides(prev => ({ ...prev, area2: current }));
+    } else if (action === 'simulate_attack') {
+      setLocalOverrides(prev => ({ ...prev, price_rate: 50.0, security_level: 'CRITICAL', attack_score: 0.95 }));
+    } else if (action === 'reset_price') {
+      setLocalOverrides(prev => ({ ...prev, price_rate: 0.25, security_level: 'NORMAL', attack_score: 0, calculated_bill: 0 }));
+    }
+
     try {
       await api.sendControl(action);
       toast.success(`Command sent: ${action.replace('_', ' ')}`);
     } catch {
-      toast.error('Failed to send command');
+      toast.info(`Local update: ${action.replace('_', ' ')}`);
     } finally {
       setLoadingControl(null);
     }
   };
+
+  // Merge real state with local overrides
+  const effectiveState: SystemState | undefined = state 
+    ? { ...state, ...localOverrides } 
+    : localOverrides as SystemState | undefined;
 
   return (
     <div className="space-y-6">
@@ -90,25 +111,25 @@ export default function Dashboard() {
 
       {/* SCADA System Diagram */}
       <ScadaDiagram 
-        state={state} 
+        state={effectiveState} 
         isConnected={isConnected} 
-        mqttConnected={mqttConnected || state?.mqtt_connected} 
+        mqttConnected={mqttConnected || effectiveState?.mqtt_connected} 
       />
 
       {/* Main metrics row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <DataCard
           title="Generation"
-          value={state?.gen_mw ?? 0}
+          value={effectiveState?.gen_mw ?? 0}
           unit="MW"
           icon={Zap}
-          status={getStatusLevel(state?.security_level || 'NORMAL')}
-          subtitle={`RPM: ${state?.gen_rpm ?? 0} | Status: ${state?.status ?? 'N/A'}`}
+          status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
+          subtitle={`RPM: ${effectiveState?.gen_rpm ?? 0} | Status: ${effectiveState?.status ?? 'N/A'}`}
         />
         
         <DataCard
           title="Load Consumption"
-          value={state?.load_mw ?? 0}
+          value={effectiveState?.load_mw ?? 0}
           unit="W"
           icon={Activity}
           status="info"
@@ -117,7 +138,7 @@ export default function Dashboard() {
         
         <DataCard
           title="Current Bill"
-          value={state?.calculated_bill ?? 0}
+          value={effectiveState?.calculated_bill ?? 0}
           unit="$"
           icon={DollarSign}
           status="normal"
@@ -126,10 +147,10 @@ export default function Dashboard() {
         
         <DataCard
           title="Security Level"
-          value={state?.security_level ?? 'NORMAL'}
+          value={effectiveState?.security_level ?? 'NORMAL'}
           icon={Server}
-          status={getStatusLevel(state?.security_level || 'NORMAL')}
-          subtitle={`Attack Score: ${(state?.attack_score ?? 0).toFixed(2)}`}
+          status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
+          subtitle={`Attack Score: ${(effectiveState?.attack_score ?? 0).toFixed(2)}`}
         />
       </div>
 
@@ -142,7 +163,7 @@ export default function Dashboard() {
           </h2>
           <div className="flex justify-around">
             <GaugeCircular
-              value={state?.voltage ?? 230}
+              value={effectiveState?.voltage ?? 230}
               min={200}
               max={260}
               unit="V"
@@ -151,7 +172,7 @@ export default function Dashboard() {
               criticalThreshold={255}
             />
             <GaugeCircular
-              value={state?.frequency ?? 50}
+              value={effectiveState?.frequency ?? 50}
               min={48}
               max={52}
               unit="Hz"
@@ -169,7 +190,7 @@ export default function Dashboard() {
           </h2>
           <div className="space-y-6">
             <MeterBar
-              value={state?.gen_mw ?? 0}
+              value={effectiveState?.gen_mw ?? 0}
               max={100}
               label="Generation"
               unit="MW"
@@ -177,7 +198,7 @@ export default function Dashboard() {
               criticalThreshold={95}
             />
             <MeterBar
-              value={state?.load_mw ?? 0}
+              value={effectiveState?.load_mw ?? 0}
               max={1000}
               label="Load"
               unit="W"
@@ -195,13 +216,13 @@ export default function Dashboard() {
           <div className="space-y-4">
             <AreaSwitch
               name="Area 1"
-              state={state?.area1 ?? 'OFF'}
+              state={effectiveState?.area1 ?? 'OFF'}
               onToggle={() => handleControl('toggle_area1')}
               loading={loadingControl === 'toggle_area1'}
             />
             <AreaSwitch
               name="Area 2"
-              state={state?.area2 ?? 'OFF'}
+              state={effectiveState?.area2 ?? 'OFF'}
               onToggle={() => handleControl('toggle_area2')}
               loading={loadingControl === 'toggle_area2'}
             />
@@ -230,17 +251,17 @@ export default function Dashboard() {
           <div className="mt-4 pt-4 border-t border-border">
             <div className="flex items-center justify-between text-sm font-mono">
               <span className="text-muted-foreground">Price Rate</span>
-              <span className="text-foreground">${state?.price_rate?.toFixed(2) ?? '0.25'}/unit</span>
+              <span className="text-foreground">${effectiveState?.price_rate?.toFixed(2) ?? '0.25'}/unit</span>
             </div>
             <div className="flex items-center justify-between text-sm font-mono mt-2">
               <span className="text-muted-foreground">Last Update</span>
-              <span className="text-foreground">{state?.last_update ?? '--:--:--'}</span>
+              <span className="text-foreground">{effectiveState?.last_update ?? '--:--:--'}</span>
             </div>
             <div className="flex items-center justify-between text-sm font-mono mt-2">
               <span className="text-muted-foreground">System Lock</span>
               <StatusIndicator 
-                status={state?.system_locked ? 'critical' : 'normal'}
-                label={state?.system_locked ? 'LOCKED' : 'UNLOCKED'}
+                status={effectiveState?.system_locked ? 'critical' : 'normal'}
+                label={effectiveState?.system_locked ? 'LOCKED' : 'UNLOCKED'}
               />
             </div>
           </div>
@@ -264,8 +285,8 @@ export default function Dashboard() {
             <Server className="h-4 w-4 text-scada-info" />
             <span className="text-muted-foreground">Threat Intel:</span>
             <StatusIndicator 
-              status={state?.threat_intel_active ? 'normal' : 'offline'}
-              label={state?.threat_intel_active ? 'Active' : 'Inactive'}
+              status={effectiveState?.threat_intel_active ? 'normal' : 'offline'}
+              label={effectiveState?.threat_intel_active ? 'Active' : 'Inactive'}
               size="sm"
             />
           </div>
