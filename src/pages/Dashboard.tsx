@@ -233,24 +233,6 @@ export default function Dashboard() {
                 />
               </div>
               
-              <div className="mt-4 pt-4 border-t border-border space-y-2">
-                <button
-                  onClick={() => handleControl('simulate_attack')}
-                  disabled={loadingControl === 'simulate_attack'}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded border border-destructive/50 bg-destructive/10 text-destructive text-xs font-mono hover:bg-destructive/20 transition-colors"
-                >
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Simulate Attack
-                </button>
-                <button
-                  onClick={() => handleControl('reset_price')}
-                  disabled={loadingControl === 'reset_price'}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded border border-scada-normal/50 bg-scada-normal/10 text-scada-normal text-xs font-mono hover:bg-scada-normal/20 transition-colors"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Reset Price / Clear Attack
-                </button>
-              </div>
 
               <div className="mt-4 pt-4 border-t border-border">
                 <div className="flex items-center justify-between text-sm font-mono">
