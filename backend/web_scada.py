@@ -1,11 +1,12 @@
 """
 Smart Grid SCADA Backend Server
-Connects to real MQTT hardware via broker.hivemq.com
+Digital Twin Simulation + Real MQTT Hardware Override
 Run with: python web_scada.py
 """
 
 import os
 import json
+import math
 import random
 import threading
 import time
@@ -36,7 +37,7 @@ db = SQLAlchemy(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ─────────────────────────────────────────────────────────────
-# MQTT Configuration (matches your hardware setup)
+# MQTT Configuration
 # ─────────────────────────────────────────────────────────────
 BROKER = "broker.hivemq.com"
 PORT = 1883
@@ -93,17 +94,35 @@ class AuditLog(db.Model):
 
 
 # ─────────────────────────────────────────────────────────────
-# System State (updated by real MQTT hardware data)
+# Hardware State (populated by real MQTT data)
+# ─────────────────────────────────────────────────────────────
+HARDWARE_TIMEOUT_SECONDS = 10
+
+hardware_state = {
+    'online': False,
+    'gen_w': 0.0,
+    'rpm': 0,
+    'status': 'offline',
+    'load_w': 0.0,
+    'voltage': None,
+    'frequency': None,
+    'area1': None,
+    'area2': None,
+    'last_message_time': 0,
+}
+
+# ─────────────────────────────────────────────────────────────
+# Simulated System State (digital twin)
 # ─────────────────────────────────────────────────────────────
 system_state = {
-    'gen_mw': 0.0,
-    'gen_rpm': 0,
-    'status': 'WAITING',
-    'load_mw': 0.0,
-    'voltage': 0.0,
-    'frequency': 0.0,
-    'area1': 'OFF',
-    'area2': 'OFF',
+    'gen_mw': 0.0,       # generation in watts (named gen_mw for frontend compat)
+    'gen_rpm': 3000,
+    'status': 'ONLINE',
+    'load_mw': 0.0,      # load in watts
+    'voltage': 230.0,
+    'frequency': 50.0,
+    'area1': 'ON',
+    'area2': 'ON',
     'calculated_bill': 0.0,
     'security_level': 'NORMAL',
     'system_locked': False,
@@ -111,7 +130,8 @@ system_state = {
     'attack_score': 0,
     'threat_intel_active': True,
     'price_rate': 0.25,
-    'last_update': 'Connecting...',
+    'last_update': 'Initializing...',
+    'data_source': 'simulation',   # 'simulation' or 'hardware'
 }
 
 security_stats = {
@@ -126,6 +146,161 @@ threat_intel = {
     'last_refresh': datetime.utcnow().isoformat(),
 }
 
+# Grid event state
+_active_event = None
+_event_end_time = 0
+
+
+# ─────────────────────────────────────────────────────────────
+# Daily Load Curve Model
+# ─────────────────────────────────────────────────────────────
+def get_base_load_for_hour(hour):
+    """Return base load (W) following a realistic daily demand curve."""
+    # Piecewise linear interpolation between time-of-day anchor points
+    curve = [
+        (0, 2000), (6, 2000),      # night: low
+        (7, 2800), (9, 3800),      # morning ramp
+        (12, 4000),                # late morning
+        (13, 5500), (17, 5500),    # afternoon plateau
+        (18, 6500), (20, 8000),    # evening peak ramp
+        (21, 8000),                # peak
+        (22, 5500), (23, 3500),    # evening wind-down
+        (24, 2000),                # back to night
+    ]
+    # Find surrounding anchor points
+    for i in range(len(curve) - 1):
+        t0, v0 = curve[i]
+        t1, v1 = curve[i + 1]
+        if t0 <= hour <= t1:
+            if t1 == t0:
+                return v0
+            frac = (hour - t0) / (t1 - t0)
+            return v0 + frac * (v1 - v0)
+    return 2000  # fallback
+
+
+def simulate_grid_values():
+    """
+    Compute realistic simulated grid values based on time-of-day
+    load curve and grid physics relationships.
+    """
+    global _active_event, _event_end_time
+
+    now = datetime.now()
+    hour = now.hour + now.minute / 60.0
+
+    # --- Base load from daily curve ---
+    base_load = get_base_load_for_hour(hour)
+
+    # --- Add natural fluctuation (±200–400W) ---
+    fluctuation = random.gauss(0, 150)  # std dev 150W → ~95% within ±300W
+    fluctuation = max(-400, min(400, fluctuation))
+    load_w = base_load + fluctuation
+
+    # --- Grid Events (random disturbances) ---
+    current_time = time.time()
+
+    # Check if active event has expired
+    if _active_event and current_time > _event_end_time:
+        _active_event = None
+
+    # Randomly trigger a new event (~once every 3-5 minutes at 2s intervals)
+    if not _active_event and random.random() < 0.008:  # ~0.8% chance per tick
+        event_type = random.choice(['load_spike', 'voltage_dip', 'frequency_drop'])
+        if event_type == 'load_spike':
+            _active_event = {'type': 'load_spike', 'extra_load': random.uniform(600, 1000)}
+            _event_end_time = current_time + random.uniform(4, 8)
+        elif event_type == 'voltage_dip':
+            _active_event = {'type': 'voltage_dip', 'voltage_override': random.uniform(212, 218)}
+            _event_end_time = current_time + random.uniform(3, 6)
+        elif event_type == 'frequency_drop':
+            _active_event = {'type': 'frequency_drop', 'freq_override': random.uniform(49.5, 49.75)}
+            _event_end_time = current_time + random.uniform(3, 7)
+
+    # Apply active event
+    if _active_event:
+        if _active_event['type'] == 'load_spike':
+            load_w += _active_event['extra_load']
+
+    # Clamp load
+    load_w = max(1000, min(8500, load_w))
+
+    # --- Grid Physics ---
+    # Reference base load for physics calculations (midpoint of range)
+    ref_base = 4500
+
+    # Frequency: drops when load is high, rises when low
+    frequency = 50.0 - ((load_w - ref_base) / 20000.0)
+    frequency += random.gauss(0, 0.01)  # tiny noise
+    frequency = max(49.8, min(50.2, frequency))
+
+    # Voltage: drops when load is high
+    voltage = 230.0 - ((load_w - ref_base) / 500.0)
+    voltage += random.gauss(0, 0.3)  # small noise
+    voltage = max(220, min(240, voltage))
+
+    # Apply event overrides
+    if _active_event:
+        if _active_event['type'] == 'voltage_dip':
+            voltage = _active_event['voltage_override'] + random.gauss(0, 0.5)
+        elif _active_event['type'] == 'frequency_drop':
+            frequency = _active_event['freq_override'] + random.gauss(0, 0.02)
+
+    # --- Generation = Load + 5% transmission losses ---
+    generation_w = load_w * 1.05
+
+    # RPM: tied to frequency (synchronous speed for 50Hz = 3000 RPM)
+    rpm = int((frequency / 50.0) * 3000 + random.gauss(0, 5))
+    rpm = max(2980, min(3050, rpm))
+
+    return {
+        'load_w': round(load_w, 1),
+        'generation_w': round(generation_w, 1),
+        'voltage': round(voltage, 2),
+        'frequency': round(frequency, 3),
+        'rpm': rpm,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Merged State (simulation + hardware override)
+# ─────────────────────────────────────────────────────────────
+def merged_state():
+    """
+    Return the authoritative system state.
+    Hardware values override simulation when hardware is online.
+    """
+    # Check hardware timeout
+    if hardware_state['last_message_time'] > 0:
+        elapsed = time.time() - hardware_state['last_message_time']
+        hardware_state['online'] = elapsed < HARDWARE_TIMEOUT_SECONDS
+    else:
+        hardware_state['online'] = False
+
+    state = dict(system_state)
+
+    if hardware_state['online']:
+        state['data_source'] = 'hardware'
+        state['gen_mw'] = hardware_state['gen_w']
+        state['gen_rpm'] = hardware_state['rpm']
+        state['status'] = hardware_state['status']
+        state['load_mw'] = hardware_state['load_w']
+        if hardware_state['voltage'] is not None:
+            state['voltage'] = hardware_state['voltage']
+        if hardware_state['frequency'] is not None:
+            state['frequency'] = hardware_state['frequency']
+        if hardware_state['area1'] is not None:
+            state['area1'] = hardware_state['area1']
+        if hardware_state['area2'] is not None:
+            state['area2'] = hardware_state['area2']
+    else:
+        state['data_source'] = 'simulation'
+
+    state['mqtt_connected'] = system_state['mqtt_connected']
+    state['last_update'] = time.strftime("%H:%M:%S")
+    return state
+
+
 # ─────────────────────────────────────────────────────────────
 # MQTT Callbacks (real hardware data)
 # ─────────────────────────────────────────────────────────────
@@ -133,7 +308,6 @@ def on_mqtt_connect(client, userdata, flags, rc):
     print(f"✅ Connected to MQTT Broker (RC: {rc})")
     client.subscribe(TOPIC_ROOT)
     system_state['mqtt_connected'] = True
-    system_state['last_update'] = time.strftime("%H:%M:%S")
     socketio.emit('mqtt_status', {'connected': True})
 
 
@@ -147,36 +321,35 @@ def on_mqtt_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
         data = json.loads(payload)
-        system_state['last_update'] = time.strftime("%H:%M:%S")
+        hardware_state['last_message_time'] = time.time()
+        hardware_state['online'] = True
 
         if "plant" in msg.topic:
-            # Power plant data from ESP32/hardware
-            system_state['gen_mw'] = float(data.get('gen', 0))
-            system_state['gen_rpm'] = int(data.get('rpm', 0))
-            system_state['status'] = data.get('status', 'OK')
-            # Derive voltage/frequency from generation if available
+            hardware_state['gen_w'] = float(data.get('gen', 0))
+            hardware_state['rpm'] = int(data.get('rpm', 0))
+            hardware_state['status'] = data.get('status', 'online')
             if 'voltage' in data:
-                system_state['voltage'] = float(data['voltage'])
+                hardware_state['voltage'] = float(data['voltage'])
             if 'frequency' in data:
-                system_state['frequency'] = float(data['frequency'])
+                hardware_state['frequency'] = float(data['frequency'])
 
         elif "meter/data" in msg.topic:
-            # Smart meter load data
-            system_state['load_mw'] = float(data.get('load', 0))
+            hardware_state['load_w'] = float(data.get('load', 0))
 
         elif "grid/control" in msg.topic:
-            # ESP32 feedback = single source of truth for area states
             if 'area1' in data:
+                hardware_state['area1'] = data['area1']
                 system_state['area1'] = data['area1']
             if 'area2' in data:
+                hardware_state['area2'] = data['area2']
                 system_state['area2'] = data['area2']
 
         elif "meter/bill" in msg.topic:
             if 'bill' in data:
                 system_state['calculated_bill'] = float(data['bill'])
 
-        # Broadcast updated state to all web clients
-        socketio.emit('state_update', system_state)
+        # Broadcast merged state immediately on hardware data
+        socketio.emit('state_update', merged_state())
 
     except Exception as e:
         print(f"⚠️ MQTT parse error: {e}")
@@ -232,12 +405,12 @@ def logout():
 
 
 # ─────────────────────────────────────────────────────────────
-# API Routes
+# API Routes (all use merged_state)
 # ─────────────────────────────────────────────────────────────
 @app.route('/api/state')
 @login_required
 def get_state():
-    return jsonify(system_state)
+    return jsonify(merged_state())
 
 
 @app.route('/api/control', methods=['POST'])
@@ -259,22 +432,6 @@ def control():
         add_audit_log('TOGGLE_AREA2', session.get('username', 'unknown'), {'new_state': new_val})
         return jsonify({'success': True, 'area2': new_val})
 
-    elif action == 'simulate_attack':
-        system_state['price_rate'] = 50.0
-        system_state['attack_score'] = min(100, system_state['attack_score'] + 60)
-        system_state['security_level'] = 'CRITICAL'
-        add_audit_log('SIMULATE_ATTACK', session.get('username', 'unknown'))
-        socketio.emit('state_update', system_state)
-        return jsonify({'success': True, 'message': 'Attack simulated'})
-
-    elif action == 'reset_price':
-        system_state['price_rate'] = 0.25
-        system_state['attack_score'] = 0
-        system_state['security_level'] = 'NORMAL'
-        add_audit_log('RESET_PRICE', session.get('username', 'unknown'))
-        socketio.emit('state_update', system_state)
-        return jsonify({'success': True, 'message': 'Price reset'})
-
     return jsonify({'error': 'Unknown action'}), 400
 
 
@@ -286,18 +443,18 @@ def send_mqtt_control(area, value):
         mqtt_client.publish(TOPIC_CONTROL, payload, qos=1)
         print(f"📤 MQTT Control: {area} → {value}")
     else:
-        # If MQTT not connected, update state directly for demo
         system_state[area] = value
-        socketio.emit('state_update', system_state)
+        socketio.emit('state_update', merged_state())
         print(f"⚠️ MQTT offline, updated state locally: {area} → {value}")
 
 
 @app.route('/api/v1/security-status')
 @login_required
 def get_security_status():
+    state = merged_state()
     return jsonify({
-        'security_posture': system_state['security_level'],
-        'attack_score': system_state['attack_score'],
+        'security_posture': state['security_level'],
+        'attack_score': state['attack_score'],
         'stats': security_stats,
         'threat_intel': threat_intel,
         'timestamp': datetime.utcnow().isoformat(),
@@ -412,7 +569,7 @@ def serve_frontend(path=''):
 def handle_connect():
     print(f'Client connected: {request.sid}')
     emit('mqtt_status', {'connected': system_state['mqtt_connected']})
-    emit('state_update', system_state)
+    emit('state_update', merged_state())
 
 
 @socketio.on('disconnect')
@@ -421,29 +578,33 @@ def handle_disconnect():
 
 
 # ─────────────────────────────────────────────────────────────
-# Background Billing Thread (matches your original logic)
+# Simulation Loop (Digital Twin Engine)
 # ─────────────────────────────────────────────────────────────
-def billing_thread():
-    """Background billing calculation — publishes bill via MQTT."""
+def simulation_loop():
+    """
+    Background thread that continuously updates simulated grid values.
+    Runs every 2 seconds. When hardware is online, simulation still runs
+    but merged_state() will prefer hardware values.
+    """
     with app.app_context():
         while True:
-            # Bill calculation: (load_watts / 1000) * price_rate * interval
-            cost = (system_state['load_mw'] / 1000.0) * system_state['price_rate'] * 0.05
-            system_state['calculated_bill'] += cost
+            # --- Update simulated grid values ---
+            sim = simulate_grid_values()
+            system_state['gen_mw'] = sim['generation_w']
+            system_state['load_mw'] = sim['load_w']
+            system_state['voltage'] = sim['voltage']
+            system_state['frequency'] = sim['frequency']
+            system_state['gen_rpm'] = sim['rpm']
+            system_state['status'] = 'ONLINE'
 
-            # Publish bill to MQTT
-            if mqtt_client and system_state['mqtt_connected']:
-                try:
-                    payload = json.dumps({'bill': round(system_state['calculated_bill'], 2)})
-                    mqtt_client.publish(TOPIC_BILL, payload)
-                except:
-                    pass
+            # --- Billing: gradual accumulation ---
+            system_state['calculated_bill'] += sim['load_w'] * 0.000001
 
-            # Decay attack score over time
+            # --- Decay attack score ---
             if system_state['attack_score'] > 0:
                 system_state['attack_score'] = max(0, system_state['attack_score'] - 0.5)
 
-            # Update security level based on attack score
+            # --- Update security level ---
             score = system_state['attack_score']
             if score >= 70:
                 system_state['security_level'] = 'CRITICAL'
@@ -452,28 +613,29 @@ def billing_thread():
             else:
                 system_state['security_level'] = 'NORMAL'
 
-            # Record historical data periodically
+            # --- Record historical data (~every 20 seconds on average) ---
             if random.random() < 0.1:
                 try:
+                    state = merged_state()
                     grid_data = GridData(
-                        gen_mw=system_state['gen_mw'],
-                        load_mw=system_state['load_mw'],
-                        voltage=system_state['voltage'],
-                        frequency=system_state['frequency'],
-                        security_level=system_state['security_level'],
-                        attack_score=system_state['attack_score'],
+                        gen_mw=state['gen_mw'],
+                        load_mw=state['load_mw'],
+                        voltage=state['voltage'],
+                        frequency=state['frequency'],
+                        security_level=state['security_level'],
+                        attack_score=state['attack_score'],
                     )
                     db.session.add(grid_data)
                     db.session.commit()
-                except:
-                    pass
+                except Exception:
+                    db.session.rollback()
 
             security_stats['total_inspected'] += random.randint(1, 5)
 
-            # Broadcast state to all web clients
-            socketio.emit('state_update', system_state)
+            # --- Broadcast merged state to all clients ---
+            socketio.emit('state_update', merged_state())
 
-            time.sleep(1)
+            time.sleep(2)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -525,14 +687,14 @@ if __name__ == '__main__':
             print(f"📡 Subscribing to: {TOPIC_ROOT}")
         except Exception as e:
             print(f"⚠️ MQTT connection failed: {e}")
-            print("   Server will run without MQTT (demo mode)")
+            print("   Server will run without MQTT (simulation mode)")
     else:
-        print("⚠️ Running without MQTT (install paho-mqtt for hardware integration)")
+        print("⚠️ Running without MQTT (simulation-only mode)")
 
-    # Start billing/monitoring thread
-    bill_thread = threading.Thread(target=billing_thread, daemon=True)
-    bill_thread.start()
-    print("💰 Billing thread started")
+    # Start simulation engine thread
+    sim_thread = threading.Thread(target=simulation_loop, daemon=True)
+    sim_thread.start()
+    print("🔄 Digital Twin simulation engine started (2s interval)")
 
     print("\n🚀 Starting SCADA Server on http://localhost:5000")
     print("📋 Default credentials:")
@@ -541,5 +703,6 @@ if __name__ == '__main__':
     print(f"\n📡 MQTT Broker: {BROKER}:{PORT}")
     print(f"📡 Topics: {TOPIC_ROOT}")
     print(f"📡 Control: {TOPIC_CONTROL}")
+    print("📊 Simulation: Daily load curve + grid physics active")
 
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
