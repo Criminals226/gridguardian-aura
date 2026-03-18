@@ -202,20 +202,20 @@ export default function Dashboard() {
               </h2>
               <div className="space-y-6">
                 <MeterBar
-                  value={effectiveState?.gen_mw ?? 0}
-                  max={100}
+                  value={Math.round(effectiveState?.gen_mw ?? 0)}
+                  max={20000}
                   label="Generation"
-                  unit="MW"
-                  warningThreshold={80}
-                  criticalThreshold={95}
+                  unit="W"
+                  warningThreshold={16000}
+                  criticalThreshold={19000}
                 />
                 <MeterBar
-                  value={effectiveState?.load_mw ?? 0}
-                  max={1000}
+                  value={Math.round(effectiveState?.load_mw ?? 0)}
+                  max={20000}
                   label="Load"
                   unit="W"
-                  warningThreshold={800}
-                  criticalThreshold={950}
+                  warningThreshold={16000}
+                  criticalThreshold={19000}
                 />
               </div>
             </div>
