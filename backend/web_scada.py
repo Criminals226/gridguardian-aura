@@ -325,7 +325,7 @@ def on_mqtt_message(client, userdata, msg):
         hardware_state['online'] = True
 
         if "plant" in msg.topic:
-            hardware_state['gen_w'] = float(data.get('gen', 0))
+            hardware_state['gen_w'] = int(data.get('gen', 0))
             hardware_state['rpm'] = int(data.get('rpm', 0))
             hardware_state['status'] = data.get('status', 'online')
             if 'voltage' in data:
