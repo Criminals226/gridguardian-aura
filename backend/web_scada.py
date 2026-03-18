@@ -100,10 +100,10 @@ HARDWARE_TIMEOUT_SECONDS = 10
 
 hardware_state = {
     'online': False,
-    'gen_w': 0.0,
+    'gen_w': 0,
     'rpm': 0,
     'status': 'offline',
-    'load_w': 0.0,
+    'load_w': 0,
     'voltage': None,
     'frequency': None,
     'area1': None,
