@@ -29,6 +29,19 @@ interface SystemState {
   threat_intel_active: boolean;
   price_rate: number;
   last_update: string;
+  data_source?: 'simulation' | 'hardware';
+}
+
+/**
+ * Format power value as integer. If >= 1000W, show as whole kW.
+ * e.g. 3200 → "3 kW", 800 → "800 W"
+ */
+export function formatPower(watts: number): { value: number; unit: string } {
+  const w = Math.round(watts);
+  if (w >= 1000) {
+    return { value: Math.floor(w / 1000), unit: 'kW' };
+  }
+  return { value: w, unit: 'W' };
 }
 
 interface SecurityStatus {

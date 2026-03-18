@@ -67,7 +67,7 @@ export function DataCard({
       {/* Value */}
       <div className="flex items-baseline gap-1">
         <span className={cn('text-3xl font-mono font-bold', textColors[status])}>
-          {typeof value === 'number' ? value.toFixed(1) : value}
+          {typeof value === 'number' ? (Number.isInteger(value) ? value : value.toFixed(1)) : value}
         </span>
         {unit && (
           <span className="text-sm font-mono text-muted-foreground">{unit}</span>

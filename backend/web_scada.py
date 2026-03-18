@@ -100,10 +100,10 @@ HARDWARE_TIMEOUT_SECONDS = 10
 
 hardware_state = {
     'online': False,
-    'gen_w': 0.0,
+    'gen_w': 0,
     'rpm': 0,
     'status': 'offline',
-    'load_w': 0.0,
+    'load_w': 0,
     'voltage': None,
     'frequency': None,
     'area1': None,
@@ -192,10 +192,9 @@ def simulate_grid_values():
     # --- Base load from daily curve ---
     base_load = get_base_load_for_hour(hour)
 
-    # --- Add natural fluctuation (±200–400W) ---
-    fluctuation = random.gauss(0, 150)  # std dev 150W → ~95% within ±300W
-    fluctuation = max(-400, min(400, fluctuation))
-    load_w = base_load + fluctuation
+    # --- Step-based fluctuation (mimics smart meter integer steps) ---
+    step = random.choice([-500, 0, 500])
+    load_w = int(base_load + step)
 
     # --- Grid Events (random disturbances) ---
     current_time = time.time()
@@ -208,7 +207,7 @@ def simulate_grid_values():
     if not _active_event and random.random() < 0.008:  # ~0.8% chance per tick
         event_type = random.choice(['load_spike', 'voltage_dip', 'frequency_drop'])
         if event_type == 'load_spike':
-            _active_event = {'type': 'load_spike', 'extra_load': random.uniform(600, 1000)}
+            _active_event = {'type': 'load_spike', 'extra_load': random.choice([500, 1000])}
             _event_end_time = current_time + random.uniform(4, 8)
         elif event_type == 'voltage_dip':
             _active_event = {'type': 'voltage_dip', 'voltage_override': random.uniform(212, 218)}
@@ -222,8 +221,8 @@ def simulate_grid_values():
         if _active_event['type'] == 'load_spike':
             load_w += _active_event['extra_load']
 
-    # Clamp load
-    load_w = max(1000, min(8500, load_w))
+    # Clamp load to smart meter range (0–20000 W), keep as integer
+    load_w = int(max(0, min(20000, load_w)))
 
     # --- Grid Physics ---
     # Reference base load for physics calculations (midpoint of range)
@@ -246,16 +245,17 @@ def simulate_grid_values():
         elif _active_event['type'] == 'frequency_drop':
             frequency = _active_event['freq_override'] + random.gauss(0, 0.02)
 
-    # --- Generation = Load + 5% transmission losses ---
-    generation_w = load_w * 1.05
+    # --- Generation = Load + 3-8% transmission losses ---
+    loss_pct = random.uniform(0.03, 0.08)
+    generation_w = int(round(load_w * (1 + loss_pct)))
 
     # RPM: tied to frequency (synchronous speed for 50Hz = 3000 RPM)
     rpm = int((frequency / 50.0) * 3000 + random.gauss(0, 5))
     rpm = max(2980, min(3050, rpm))
 
     return {
-        'load_w': round(load_w, 1),
-        'generation_w': round(generation_w, 1),
+        'load_w': load_w,
+        'generation_w': generation_w,
         'voltage': round(voltage, 2),
         'frequency': round(frequency, 3),
         'rpm': rpm,
@@ -325,7 +325,7 @@ def on_mqtt_message(client, userdata, msg):
         hardware_state['online'] = True
 
         if "plant" in msg.topic:
-            hardware_state['gen_w'] = float(data.get('gen', 0))
+            hardware_state['gen_w'] = int(data.get('gen', 0))
             hardware_state['rpm'] = int(data.get('rpm', 0))
             hardware_state['status'] = data.get('status', 'online')
             if 'voltage' in data:
@@ -334,7 +334,7 @@ def on_mqtt_message(client, userdata, msg):
                 hardware_state['frequency'] = float(data['frequency'])
 
         elif "meter/data" in msg.topic:
-            hardware_state['load_w'] = float(data.get('load', 0))
+            hardware_state['load_w'] = int(data.get('load', 0))
 
         elif "grid/control" in msg.topic:
             if 'area1' in data:
