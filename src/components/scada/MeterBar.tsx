@@ -49,7 +49,7 @@ export function MeterBar({
         </span>
         {showValue && (
           <span className={cn('text-sm font-mono font-bold', getTextColor())}>
-            {value.toFixed(1)} {unit}
+            {Math.round(value)} {unit}
           </span>
         )}
       </div>
