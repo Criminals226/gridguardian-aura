@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, SystemState, SecurityStatus } from '@/lib/api';
+import { api, SystemState, SecurityStatus, formatPower } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
 import { DataCard } from '@/components/scada/DataCard';
 import { GaugeCircular } from '@/components/scada/GaugeCircular';
