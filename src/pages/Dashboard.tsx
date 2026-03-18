@@ -128,39 +128,45 @@ export default function Dashboard() {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* Main metrics row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <DataCard
-              title="Generation"
-              value={effectiveState?.gen_mw ?? 0}
-              unit="MW"
-              icon={Zap}
-              status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
-              subtitle={`RPM: ${effectiveState?.gen_rpm ?? 0} | Status: ${effectiveState?.status ?? 'N/A'}`}
-            />
-            <DataCard
-              title="Load Consumption"
-              value={effectiveState?.load_mw ?? 0}
-              unit="W"
-              icon={Activity}
-              status="info"
-              subtitle="Active power demand"
-            />
-            <DataCard
-              title="Current Bill"
-              value={effectiveState?.calculated_bill ?? 0}
-              unit="$"
-              icon={DollarSign}
-              status="normal"
-              subtitle="Calculated usage cost"
-            />
-            <DataCard
-              title="Security Level"
-              value={effectiveState?.security_level ?? 'NORMAL'}
-              icon={Server}
-              status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
-              subtitle={`Attack Score: ${(effectiveState?.attack_score ?? 0).toFixed(2)}`}
-            />
-          </div>
+          {(() => {
+            const gen = formatPower(effectiveState?.gen_mw ?? 0);
+            const load = formatPower(effectiveState?.load_mw ?? 0);
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <DataCard
+                  title="Generation"
+                  value={gen.value}
+                  unit={gen.unit}
+                  icon={Zap}
+                  status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
+                  subtitle={`RPM: ${effectiveState?.gen_rpm ?? 0} | Status: ${effectiveState?.status ?? 'N/A'}`}
+                />
+                <DataCard
+                  title="Load Consumption"
+                  value={load.value}
+                  unit={load.unit}
+                  icon={Activity}
+                  status="info"
+                  subtitle="Active power demand"
+                />
+                <DataCard
+                  title="Current Bill"
+                  value={effectiveState?.calculated_bill ?? 0}
+                  unit="$"
+                  icon={DollarSign}
+                  status="normal"
+                  subtitle="Calculated usage cost"
+                />
+                <DataCard
+                  title="Security Level"
+                  value={effectiveState?.security_level ?? 'NORMAL'}
+                  icon={Server}
+                  status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
+                  subtitle={`Attack Score: ${(effectiveState?.attack_score ?? 0).toFixed(2)}`}
+                />
+              </div>
+            );
+          })()}
 
           {/* Gauges and meters row */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
