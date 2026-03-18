@@ -334,7 +334,7 @@ def on_mqtt_message(client, userdata, msg):
                 hardware_state['frequency'] = float(data['frequency'])
 
         elif "meter/data" in msg.topic:
-            hardware_state['load_w'] = float(data.get('load', 0))
+            hardware_state['load_w'] = int(data.get('load', 0))
 
         elif "grid/control" in msg.topic:
             if 'area1' in data:
