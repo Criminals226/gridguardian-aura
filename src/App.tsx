@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Security from "@/pages/Security";
+import SOC from "@/pages/SOC";
 import Historical from "@/pages/Historical";
 import Logs from "@/pages/Logs";
 import NotFound from "@/pages/NotFound";
