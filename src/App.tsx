@@ -94,6 +94,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="security" element={<Security />} />
+        <Route path="soc" element={<SOC />} />
         <Route path="historical" element={<Historical />} />
         <Route path="logs" element={<Logs />} />
       </Route>
