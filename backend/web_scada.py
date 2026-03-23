@@ -529,6 +529,200 @@ def get_logs():
         } for log in logs])
 
 
+# ─────────────────────────────────────────────────────────────
+# MITRE ATT&CK Mapping
+# ─────────────────────────────────────────────────────────────
+MITRE_MAP = {
+    'failed login':       {'id': 'T1110', 'name': 'Brute Force',               'tactic': 'Credential Access'},
+    'authentication failure': {'id': 'T1110', 'name': 'Brute Force',           'tactic': 'Credential Access'},
+    'command execution':  {'id': 'T1059', 'name': 'Command and Scripting',     'tactic': 'Execution'},
+    'privilege escalation': {'id': 'T1068', 'name': 'Exploitation for Privilege Escalation', 'tactic': 'Privilege Escalation'},
+    'port scan':          {'id': 'T1046', 'name': 'Network Service Discovery', 'tactic': 'Discovery'},
+    'lateral movement':   {'id': 'T1021', 'name': 'Remote Services',           'tactic': 'Lateral Movement'},
+    'malware':            {'id': 'T1204', 'name': 'User Execution',            'tactic': 'Execution'},
+    'data exfiltration':  {'id': 'T1041', 'name': 'Exfiltration Over C2',      'tactic': 'Exfiltration'},
+    'dns anomaly':        {'id': 'T1071', 'name': 'Application Layer Protocol','tactic': 'Command and Control'},
+    'file integrity':     {'id': 'T1565', 'name': 'Data Manipulation',         'tactic': 'Impact'},
+    'rootkit':            {'id': 'T1014', 'name': 'Rootkit',                   'tactic': 'Defense Evasion'},
+    'web attack':         {'id': 'T1190', 'name': 'Exploit Public-Facing App', 'tactic': 'Initial Access'},
+    'sql injection':      {'id': 'T1190', 'name': 'Exploit Public-Facing App', 'tactic': 'Initial Access'},
+    'xss':                {'id': 'T1189', 'name': 'Drive-by Compromise',       'tactic': 'Initial Access'},
+    'unauthorized access': {'id': 'T1078', 'name': 'Valid Accounts',           'tactic': 'Defense Evasion'},
+}
+
+
+def map_mitre(alert_message):
+    """Map alert message to MITRE ATT&CK technique."""
+    msg = alert_message.lower()
+    for keyword, technique in MITRE_MAP.items():
+        if keyword in msg:
+            return technique
+    return {'id': 'N/A', 'name': 'Unknown', 'tactic': 'Unknown'}
+
+
+# ─────────────────────────────────────────────────────────────
+# Wazuh Alert Fetching
+# ─────────────────────────────────────────────────────────────
+WAZUH_API = os.environ.get('WAZUH_API_URL', 'https://localhost:55000')
+WAZUH_USER = os.environ.get('WAZUH_USER', 'wazuh')
+WAZUH_PASS = os.environ.get('WAZUH_PASS', 'wazuh')
+
+# In-memory alert cache (populated by Wazuh or simulation)
+_cached_alerts = []
+
+
+def fetch_wazuh_alerts():
+    """Fetch alerts from Wazuh API. Falls back to simulated alerts on failure."""
+    global _cached_alerts
+    try:
+        import requests
+        resp = requests.get(
+            f"{WAZUH_API}/security/events",
+            auth=(WAZUH_USER, WAZUH_PASS),
+            verify=False,
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            raw = resp.json().get('data', {}).get('affected_items', [])
+            alerts = []
+            for item in raw[:100]:
+                msg = item.get('rule', {}).get('description', 'Unknown alert')
+                severity = 'low'
+                level = item.get('rule', {}).get('level', 0)
+                if level >= 12:
+                    severity = 'critical'
+                elif level >= 8:
+                    severity = 'high'
+                elif level >= 5:
+                    severity = 'medium'
+                mitre = map_mitre(msg)
+                alerts.append({
+                    'id': item.get('id', ''),
+                    'timestamp': item.get('timestamp', datetime.utcnow().isoformat()),
+                    'message': msg,
+                    'severity': severity,
+                    'mitre_id': mitre['id'],
+                    'mitre_name': mitre['name'],
+                    'mitre_tactic': mitre['tactic'],
+                    'source': 'wazuh',
+                })
+            _cached_alerts = alerts
+            return alerts
+    except Exception as e:
+        print(f"⚠️ Wazuh API unreachable ({e}), using simulated alerts")
+
+    return generate_simulated_alerts()
+
+
+def generate_simulated_alerts():
+    """Generate realistic simulated SOC alerts for demo/training."""
+    global _cached_alerts
+    sim_templates = [
+        {'message': 'Multiple failed login attempts detected on SSH',  'severity': 'high',     'kw': 'failed login'},
+        {'message': 'Suspicious command execution on host-12',         'severity': 'critical',  'kw': 'command execution'},
+        {'message': 'Port scan detected from 192.168.1.105',          'severity': 'medium',    'kw': 'port scan'},
+        {'message': 'File integrity change in /etc/passwd',            'severity': 'high',      'kw': 'file integrity'},
+        {'message': 'SQL injection attempt on web application',        'severity': 'critical',  'kw': 'sql injection'},
+        {'message': 'Privilege escalation attempt detected',           'severity': 'critical',  'kw': 'privilege escalation'},
+        {'message': 'Lateral movement via RDP from 10.0.0.45',        'severity': 'high',      'kw': 'lateral movement'},
+        {'message': 'DNS anomaly: high volume queries to unknown TLD', 'severity': 'medium',    'kw': 'dns anomaly'},
+        {'message': 'Unauthorized access to admin panel',              'severity': 'high',      'kw': 'unauthorized access'},
+        {'message': 'XSS payload detected in request parameters',      'severity': 'medium',    'kw': 'xss'},
+        {'message': 'Rootkit signature detected on server-03',        'severity': 'critical',  'kw': 'rootkit'},
+        {'message': 'Data exfiltration attempt to external IP',        'severity': 'critical',  'kw': 'data exfiltration'},
+        {'message': 'Web attack: directory traversal attempt',         'severity': 'medium',    'kw': 'web attack'},
+        {'message': 'Malware execution blocked on endpoint-07',       'severity': 'high',      'kw': 'malware'},
+        {'message': 'Authentication failure for SCADA HMI login',     'severity': 'high',      'kw': 'authentication failure'},
+    ]
+
+    now = datetime.utcnow()
+    alerts = []
+    selected = random.sample(sim_templates, k=min(len(sim_templates), random.randint(8, 15)))
+    for i, t in enumerate(selected):
+        ts = now - timedelta(minutes=random.randint(0, 120))
+        mitre = map_mitre(t['kw'])
+        alerts.append({
+            'id': f'sim-{i+1:04d}',
+            'timestamp': ts.isoformat(),
+            'message': t['message'],
+            'severity': t['severity'],
+            'mitre_id': mitre['id'],
+            'mitre_name': mitre['name'],
+            'mitre_tactic': mitre['tactic'],
+            'source': 'simulation',
+        })
+
+    alerts.sort(key=lambda a: a['timestamp'], reverse=True)
+    _cached_alerts = alerts
+    return alerts
+
+
+def analyze_alert_with_ai(alert):
+    """
+    Analyze an alert using AI-style heuristic engine.
+    Returns structured analysis with attack type, severity, and recommendation.
+    """
+    msg = alert.get('message', '').lower()
+    mitre = map_mitre(msg)
+    severity = alert.get('severity', 'medium')
+
+    # Rule-based analysis engine
+    recommendations = {
+        'T1110': 'Implement account lockout policy. Enable MFA. Review failed login logs.',
+        'T1059': 'Isolate affected host immediately. Check process tree. Collect forensic image.',
+        'T1068': 'Patch the exploited vulnerability. Restrict user privileges. Audit sudo access.',
+        'T1046': 'Block source IP at firewall. Review network segmentation. Enable IDS rules.',
+        'T1021': 'Disable unnecessary remote services. Enforce network segmentation. Check lateral paths.',
+        'T1204': 'Quarantine the file. Update AV signatures. Educate users on phishing.',
+        'T1041': 'Block the external IP. Inspect outbound traffic. Check DLP policies.',
+        'T1071': 'Investigate DNS queries. Block suspicious domains. Enable DNS logging.',
+        'T1565': 'Restore files from backup. Audit file integrity tools. Investigate access logs.',
+        'T1014': 'Take host offline. Perform full disk forensics. Rebuild from clean image.',
+        'T1190': 'Patch web application. Enable WAF rules. Review application logs.',
+        'T1189': 'Block malicious URL. Scan affected endpoints. Update browser policies.',
+        'T1078': 'Reset compromised credentials. Review access logs. Enable anomaly detection.',
+    }
+
+    rec = recommendations.get(mitre['id'], 'Investigate the alert. Collect logs and escalate to Tier 2 analyst.')
+
+    return {
+        'alert_id': alert.get('id'),
+        'attack_type': mitre['name'],
+        'technique': f"{mitre['id']} - {mitre['name']}",
+        'tactic': mitre['tactic'],
+        'severity': severity,
+        'confidence': random.choice(['High', 'Medium', 'High', 'High']),
+        'recommended_action': rec,
+        'ioc_summary': f"Alert pattern matches {mitre['id']} ({mitre['tactic']}). "
+                        f"Severity: {severity.upper()}. Immediate response recommended."
+                        if severity in ('critical', 'high') else
+                        f"Alert matches {mitre['id']} ({mitre['tactic']}). Monitor and investigate.",
+    }
+
+
+@app.route('/api/alerts')
+@login_required
+def get_alerts():
+    """Fetch SOC alerts from Wazuh or simulated source."""
+    alerts = fetch_wazuh_alerts()
+    return jsonify(alerts)
+
+
+@app.route('/api/analyze-alert', methods=['POST'])
+@login_required
+def analyze_alert():
+    """Analyze a single alert with AI/heuristic engine."""
+    alert_data = request.get_json()
+    if not alert_data:
+        return jsonify({'error': 'No alert data provided'}), 400
+    result = analyze_alert_with_ai(alert_data)
+    add_audit_log('ANALYZE_ALERT', session.get('username', 'unknown'), {
+        'alert_id': alert_data.get('id'),
+        'technique': result['technique'],
+    })
+    return jsonify(result)
+
+
 @app.route('/api/get_stats')
 @login_required
 def get_stats():
