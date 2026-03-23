@@ -6,6 +6,7 @@ import { useSocket } from '@/hooks/useSocket';
 import {
   LayoutDashboard,
   Shield,
+  Radar,
   BarChart3,
   FileText,
   LogOut,
