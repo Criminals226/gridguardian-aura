@@ -6,7 +6,7 @@ import { useSocket } from '@/hooks/useSocket';
 import {
   LayoutDashboard,
   Shield,
-  Radar,
+  
   BarChart3,
   FileText,
   LogOut,
@@ -21,7 +21,7 @@ import { useState } from 'react';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Security', href: '/security', icon: Shield },
-  { name: 'SOC', href: '/soc', icon: Radar },
+  
   { name: 'Historical', href: '/historical', icon: BarChart3 },
   { name: 'Logs', href: '/logs', icon: FileText },
 ];
