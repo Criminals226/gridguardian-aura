@@ -6,9 +6,9 @@ import { useSocket } from '@/hooks/useSocket';
 import {
   LayoutDashboard,
   Shield,
-  
   BarChart3,
   FileText,
+  FlaskConical,
   LogOut,
   Zap,
   User,
@@ -24,6 +24,7 @@ const navigation = [
   
   { name: 'Historical', href: '/historical', icon: BarChart3 },
   { name: 'Logs', href: '/logs', icon: FileText },
+  { name: 'Simulation Lab', href: '/simulation', icon: FlaskConical },
 ];
 
 export default function MainLayout() {
