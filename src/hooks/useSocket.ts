@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { SystemState, ThreatLog } from '@/lib/api';
+import { useAttack } from '@/contexts/AttackContext';
+import { applyAttack, resetAttackEngine, type GridSample } from '@/lib/attackEngine';
 
 interface SocketEvents {
   state_update: (state: SystemState) => void;
@@ -25,6 +27,15 @@ export function useSocket() {
   const [threats, setThreats] = useState<ThreatLog[]>([]);
   const [mqttConnected, setMqttConnected] = useState(false);
 
+  // Pull current attack state from the global AttackContext.
+  // We mirror it into a ref so the socket listeners (registered once)
+  // always read the latest attack type without needing to re-subscribe.
+  const { type: attackType, active: attackActive } = useAttack();
+  const attackRef = useRef(attackType);
+  useEffect(() => {
+    attackRef.current = attackActive ? attackType : 'NONE';
+  }, [attackType, attackActive]);
+
   useEffect(() => {
     // Connect to Socket.IO server
     const socket = io(window.location.origin, {
@@ -46,7 +57,17 @@ export function useSocket() {
     });
 
     socket.on('state_update', (state: SystemState) => {
-      setLastState(state);
+      // 1. Raw SCADA data received from the socket.
+      // 2. Run it through the Red Team attack simulator.
+      const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
+
+      // 3a. DoS → simulate total data loss: drop the update entirely.
+      if (tampered === null) {
+        return;
+      }
+
+      // 3b. Otherwise commit the (possibly tampered) sample to state.
+      setLastState(tampered as unknown as SystemState);
     });
 
     socket.on('threat_detected', (threat) => {
@@ -70,6 +91,7 @@ export function useSocket() {
 
     return () => {
       socket.disconnect();
+      resetAttackEngine();
     };
   }, []);
 
