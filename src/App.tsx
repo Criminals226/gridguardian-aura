@@ -12,6 +12,7 @@ import Dashboard from "@/pages/Dashboard";
 import Security from "@/pages/Security";
 import Historical from "@/pages/Historical";
 import Logs from "@/pages/Logs";
+import SimulationLab from "@/pages/SimulationLab";
 import NotFound from "@/pages/NotFound";
 
 // Layouts
@@ -97,6 +98,7 @@ function AppRoutes() {
         
         <Route path="historical" element={<Historical />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="simulation" element={<SimulationLab />} />
       </Route>
 
       {/* 404 */}
