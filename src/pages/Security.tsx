@@ -18,7 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 
 export default function Security() {
-  const { threats, clearThreats } = useSocket();
+  const { threats, clearThreats, attackScore: liveScore, posture: livePosture } = useSocket();
 
   const { data: securityStatus, refetch } = useQuery({
     queryKey: ['securityStatus'],
@@ -41,7 +41,11 @@ export default function Security() {
     retry: false,
   });
 
-  // Combine socket threats with API threats
+  // Live client-detected values take precedence; fall back to backend.
+  const effectivePosture = liveScore > 0 ? livePosture : (securityStatus?.security_posture || 'NORMAL');
+  const effectiveScore = liveScore > 0 ? liveScore : (securityStatus?.attack_score || 0);
+
+  // Combine socket threats with API threats (live first).
   const allThreats = [...threats, ...threatLogs].slice(0, 100);
 
   const formatLastRefresh = (timestamp: string | null) => {
