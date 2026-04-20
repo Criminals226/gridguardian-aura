@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
@@ -46,8 +47,23 @@ export default function Security() {
   const effectivePosture = liveScore > 0 ? livePosture : (securityStatus?.security_posture || 'NORMAL');
   const effectiveScore = liveScore > 0 ? liveScore : (securityStatus?.attack_score || 0);
 
-  // Combine socket threats with API threats (live first).
-  const allThreats = [...threats, ...threatLogs].slice(0, 100);
+  // Merge live socket/detector threats with API logs:
+  //  - dedupe by decision_id (or id+timestamp fallback)
+  //  - sort newest-first by timestamp
+  //  - cap at 100 entries
+  const allThreats = useMemo(() => {
+    const seen = new Set<string>();
+    const merged = [...threats, ...threatLogs].filter((t) => {
+      const key = t.decision_id || `${t.id}-${t.timestamp}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    merged.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+    return merged.slice(0, 100);
+  }, [threats, threatLogs]);
 
   const formatLastRefresh = (timestamp: string | null) => {
     if (!timestamp) return 'Never';
