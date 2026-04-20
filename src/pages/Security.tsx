@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
 import { SecurityPosture } from '@/components/scada/SecurityPosture';
 import { ThreatFeed } from '@/components/scada/ThreatFeed';
+import { ThreatAlertBanner } from '@/components/scada/ThreatAlertBanner';
 import { DataCard } from '@/components/scada/DataCard';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
 import { 
