@@ -3,6 +3,13 @@ import { io, Socket } from 'socket.io-client';
 import { SystemState, ThreatLog } from '@/lib/api';
 import { useAttack } from '@/contexts/AttackContext';
 import { applyAttack, resetAttackEngine, type GridSample } from '@/lib/attackEngine';
+import {
+  detectThreat,
+  postureFromScore,
+  decayScore,
+  buildThreatLog,
+  type SecurityPostureLevel,
+} from '@/lib/threatDetection';
 
 interface SocketEvents {
   state_update: (state: SystemState) => void;
@@ -27,17 +34,38 @@ export function useSocket() {
   const [threats, setThreats] = useState<ThreatLog[]>([]);
   const [mqttConnected, setMqttConnected] = useState(false);
 
+  // Local detection state (client-side anomaly detector).
+  const [attackScore, setAttackScore] = useState(0);
+  const [posture, setPosture] = useState<SecurityPostureLevel>('NORMAL');
+  const scoreRef = useRef(0);
+
   // Pull current attack state from the global AttackContext.
-  // We mirror it into a ref so the socket listeners (registered once)
-  // always read the latest attack type without needing to re-subscribe.
   const { type: attackType, active: attackActive } = useAttack();
   const attackRef = useRef(attackType);
   useEffect(() => {
     attackRef.current = attackActive ? attackType : 'NONE';
   }, [attackType, attackActive]);
 
+  // Helper: register a detection result into score / posture / threat log.
+  const ingestDetection = useCallback((sample: GridSample | null) => {
+    const result = detectThreat(sample);
+    if (result.detected) {
+      const next = Math.min(20, scoreRef.current + result.score);
+      scoreRef.current = next;
+      setAttackScore(Number(next.toFixed(2)));
+      setPosture(postureFromScore(next));
+      setThreats((prev) => [buildThreatLog(result), ...prev].slice(0, 100));
+    } else {
+      const next = decayScore(scoreRef.current);
+      if (next !== scoreRef.current) {
+        scoreRef.current = next;
+        setAttackScore(next);
+        setPosture(postureFromScore(next));
+      }
+    }
+  }, []);
+
   useEffect(() => {
-    // Connect to Socket.IO server
     const socket = io(window.location.origin, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
@@ -57,16 +85,19 @@ export function useSocket() {
     });
 
     socket.on('state_update', (state: SystemState) => {
-      // 1. Raw SCADA data received from the socket.
-      // 2. Run it through the Red Team attack simulator.
+      // 1. Raw SCADA data → 2. Red Team transform → 3. Detection pipeline.
       const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
 
-      // 3a. DoS → simulate total data loss: drop the update entirely.
+      // 3a. DoS → blackout. Run detector with null so it logs the event.
       if (tampered === null) {
+        ingestDetection(null);
         return;
       }
 
-      // 3b. Otherwise commit the (possibly tampered) sample to state.
+      // 3b. Run detector on the (possibly tampered) sample.
+      ingestDetection(tampered);
+
+      // 4. Commit sample to UI state.
       setLastState(tampered as unknown as SystemState);
     });
 
@@ -81,8 +112,8 @@ export function useSocket() {
         explanation: threat.explanation,
         metadata: {},
       };
-      
-      setThreats((prev) => [threatLog, ...prev].slice(0, 100)); // Keep last 100 threats
+
+      setThreats((prev) => [threatLog, ...prev].slice(0, 100));
     });
 
     socket.on('mqtt_status', (status) => {
@@ -93,10 +124,13 @@ export function useSocket() {
       socket.disconnect();
       resetAttackEngine();
     };
-  }, []);
+  }, [ingestDetection]);
 
   const clearThreats = useCallback(() => {
     setThreats([]);
+    scoreRef.current = 0;
+    setAttackScore(0);
+    setPosture('NORMAL');
   }, []);
 
   return {
@@ -105,5 +139,7 @@ export function useSocket() {
     threats,
     mqttConnected,
     clearThreats,
+    attackScore,
+    posture,
   };
 }
