@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/hooks/useSocket';
 import { SecurityPosture } from '@/components/scada/SecurityPosture';
 import { ThreatFeed } from '@/components/scada/ThreatFeed';
+import { ThreatAlertBanner } from '@/components/scada/ThreatAlertBanner';
 import { DataCard } from '@/components/scada/DataCard';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
 import { 
@@ -79,6 +80,9 @@ export default function Security() {
           </Button>
         </div>
       </div>
+
+      {/* Active threat alert banner (renders only on WARNING/CRITICAL) */}
+      <ThreatAlertBanner threat={allThreats[0] ?? null} posture={effectivePosture} />
 
       {/* Main security posture */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
