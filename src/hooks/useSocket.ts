@@ -3,6 +3,13 @@ import { io, Socket } from 'socket.io-client';
 import { SystemState, ThreatLog } from '@/lib/api';
 import { useAttack } from '@/contexts/AttackContext';
 import { applyAttack, resetAttackEngine, type GridSample } from '@/lib/attackEngine';
+import {
+  detectThreat,
+  postureFromScore,
+  decayScore,
+  buildThreatLog,
+  type SecurityPostureLevel,
+} from '@/lib/threatDetection';
 
 interface SocketEvents {
   state_update: (state: SystemState) => void;
