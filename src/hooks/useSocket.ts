@@ -139,5 +139,7 @@ export function useSocket() {
     threats,
     mqttConnected,
     clearThreats,
+    attackScore,
+    posture,
   };
 }
