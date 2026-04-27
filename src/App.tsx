@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AttackProvider } from "@/contexts/AttackContext";
+import { ScadaProvider } from "@/contexts/ScadaContext";
 
 // Pages
 import Login from "@/pages/Login";
@@ -88,7 +89,9 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <MainLayout />
+            <ScadaProvider>
+              <MainLayout />
+            </ScadaProvider>
           </ProtectedRoute>
         }
       >

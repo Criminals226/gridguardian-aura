@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { useSocket } from '@/hooks/useSocket';
+import { useScada } from '@/contexts/ScadaContext';
 import { SecurityPosture } from '@/components/scada/SecurityPosture';
 import { ThreatFeed } from '@/components/scada/ThreatFeed';
-import { ThreatAlertBanner } from '@/components/scada/ThreatAlertBanner';
 import { DataCard } from '@/components/scada/DataCard';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
 import { 
@@ -20,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 
 export default function Security() {
-  const { threats, clearThreats, attackScore: liveScore, posture: livePosture } = useSocket();
+  const { logs: threats, clearThreats, attackScore: liveScore, posture: livePosture } = useScada();
 
   const { data: securityStatus, refetch } = useQuery({
     queryKey: ['securityStatus'],
@@ -97,8 +96,8 @@ export default function Security() {
         </div>
       </div>
 
-      {/* Active threat alert banner (renders only on WARNING/CRITICAL) */}
-      <ThreatAlertBanner threat={allThreats[0] ?? null} posture={effectivePosture} />
+      {/* Active threat alert banner is now mounted globally in MainLayout */}
+
 
       {/* Main security posture */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
