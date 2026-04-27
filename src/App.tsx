@@ -89,7 +89,9 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <MainLayout />
+            <ScadaProvider>
+              <MainLayout />
+            </ScadaProvider>
           </ProtectedRoute>
         }
       >
@@ -114,9 +116,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <AttackProvider>
-            <ScadaProvider>
-              <AppRoutes />
-            </ScadaProvider>
+            <AppRoutes />
           </AttackProvider>
         </AuthProvider>
       </BrowserRouter>
