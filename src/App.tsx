@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AttackProvider } from "@/contexts/AttackContext";
+import { ScadaProvider } from "@/contexts/ScadaContext";
 
 // Pages
 import Login from "@/pages/Login";
@@ -113,7 +114,9 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <AttackProvider>
-            <AppRoutes />
+            <ScadaProvider>
+              <AppRoutes />
+            </ScadaProvider>
           </AttackProvider>
         </AuthProvider>
       </BrowserRouter>
