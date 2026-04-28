@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
-import { useSocket } from '@/hooks/useSocket';
+import { useSocketContext } from '@/contexts/SocketContext';
 import {
   LayoutDashboard,
   Shield,
@@ -13,6 +13,7 @@ import {
   User,
   Menu,
   X,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -20,7 +21,7 @@ import { useState } from 'react';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Security', href: '/security', icon: Shield },
-  
+  { name: 'SOC', href: '/soc', icon: Target },
   { name: 'Historical', href: '/historical', icon: BarChart3 },
   { name: 'Logs', href: '/logs', icon: FileText },
 ];
@@ -28,7 +29,7 @@ const navigation = [
 export default function MainLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { isConnected } = useSocket();
+  const { isConnected } = useSocketContext();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {

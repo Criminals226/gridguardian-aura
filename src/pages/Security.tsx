@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { useSocket } from '@/hooks/useSocket';
+import { useSocketContext } from '@/contexts/SocketContext';
 import { SecurityPosture } from '@/components/scada/SecurityPosture';
 import { ThreatFeed } from '@/components/scada/ThreatFeed';
 import { ThreatAlertBanner } from '@/components/scada/ThreatAlertBanner';
@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 
 export default function Security() {
-  const { threats, clearThreats, attackScore: liveScore, posture: livePosture } = useSocket();
+  const { threats, clearThreats, attackScore: liveScore, posture: livePosture } = useSocketContext();
 
   const { data: securityStatus, refetch } = useQuery({
     queryKey: ['securityStatus'],

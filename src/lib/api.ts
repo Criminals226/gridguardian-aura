@@ -183,6 +183,11 @@ export const api = {
     return fetchWithAuth<SystemState>('/state');
   },
 
+  // Current authenticated user
+  async getMe(): Promise<User> {
+    return fetchWithAuth<User>('/me');
+  },
+
   // Security
   async getSecurityStatus(): Promise<SecurityStatus> {
     return fetchWithAuth<SecurityStatus>('/v1/security-status');

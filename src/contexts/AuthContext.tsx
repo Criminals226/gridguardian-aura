@@ -18,14 +18,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Check if user is already authenticated
   const checkAuth = useCallback(async () => {
     try {
-      // Try to fetch state - if successful, user is authenticated
-      await api.getState();
-      // For demo, we'll set a default user since the API doesn't return user info
-      setUser({ username: 'operator', role: 'operator', full_name: 'Grid Operator' });
+      const user = await api.getMe();
+      setUser(user);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setUser(null);
       }
+      // Do NOT treat network errors or 500s as logout
     } finally {
       setIsLoading(false);
     }
@@ -39,10 +38,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await api.login({ username, password });
       if (result.success) {
-        // Set user based on username (role determination from Flask session)
-        const role = username === 'admin' ? 'admin' : 'operator';
-        const fullName = username === 'admin' ? 'System Administrator' : 'Grid Operator';
-        setUser({ username, role, full_name: fullName });
+        const me = await api.getMe();
+        setUser(me);
         return true;
       }
       return false;
