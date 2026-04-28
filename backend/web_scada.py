@@ -413,6 +413,17 @@ def get_state():
     return jsonify(merged_state())
 
 
+@app.route('/api/me')
+@login_required
+def me():
+    user = User.query.get(session['user_id'])
+    return jsonify({
+        'username': session['username'],
+        'role': session['role'],
+        'full_name': user.full_name
+    })
+
+
 @app.route('/api/control', methods=['POST'])
 @login_required
 def control():
