@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { api, User, ApiError } from '@/lib/api';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -9,22 +9,20 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check if user is already authenticated
   const checkAuth = useCallback(async () => {
     try {
-      const user = await api.getMe();
-      setUser(user);
+      const u = await api.getMe();
+      setUser(u);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setUser(null);
       }
-      // Do NOT treat network errors or 500s as logout
     } finally {
       setIsLoading(false);
     }
@@ -44,7 +42,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return false;
     } catch (error) {
-      // Bubble up connectivity problems so the UI can show a clear message
       if (error instanceof ApiError && error.status === 404) {
         throw error;
       }
@@ -70,12 +67,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 }
