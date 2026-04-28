@@ -118,11 +118,7 @@ export default function Login() {
           {/* Hint */}
           <div className="mt-6 p-3 rounded bg-secondary/50 border border-border">
             <p className="text-xs font-mono text-muted-foreground">
-              <span className="text-scada-info">Demo credentials:</span>
-              <br />
-              Admin: admin / admin123
-              <br />
-              Operator: operator / operator123
+              Contact your system administrator for access credentials.
             </p>
           </div>
         </div>
@@ -130,7 +126,7 @@ export default function Login() {
         {/* Footer */}
         <div className="text-center mt-6 text-xs font-mono text-muted-foreground">
           <p>SCADA System v2.0 | Enhanced Security</p>
-          <p className="mt-1">SQLAlchemy + Threat Intelligence + Real-time API</p>
+          <p className="mt-1">Secure Control & Data Acquisition System</p>
         </div>
       </div>
     </div>

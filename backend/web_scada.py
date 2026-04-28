@@ -29,12 +29,18 @@ except ImportError:
 # Flask App Configuration
 # ─────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder='dist', static_url_path='')
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'scada-secret-key-change-in-production')
+_secret = os.environ.get('SECRET_KEY')
+if not _secret:
+    if os.environ.get('FLASK_ENV') == 'production':
+        raise RuntimeError("SECRET_KEY env var must be set in production")
+    _secret = 'dev-only-insecure-key'
+app.config['SECRET_KEY'] = _secret
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///scada.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+state_lock = threading.Lock()
 
 # ─────────────────────────────────────────────────────────────
 # MQTT Configuration
@@ -277,7 +283,8 @@ def merged_state():
     else:
         hardware_state['online'] = False
 
-    state = dict(system_state)
+    with state_lock:
+        state = dict(system_state)
 
     if hardware_state['online']:
         state['data_source'] = 'hardware'
@@ -296,7 +303,6 @@ def merged_state():
     else:
         state['data_source'] = 'simulation'
 
-    state['mqtt_connected'] = system_state['mqtt_connected']
     state['last_update'] = time.strftime("%H:%M:%S")
     return state
 
@@ -432,13 +438,15 @@ def control():
     action = data.get('action')
 
     if action == 'toggle_area1':
-        new_val = 'OFF' if system_state['area1'] == 'ON' else 'ON'
+        with state_lock:
+            new_val = 'OFF' if system_state['area1'] == 'ON' else 'ON'
         send_mqtt_control('area1', new_val)
         add_audit_log('TOGGLE_AREA1', session.get('username', 'unknown'), {'new_state': new_val})
         return jsonify({'success': True, 'area1': new_val})
 
     elif action == 'toggle_area2':
-        new_val = 'OFF' if system_state['area2'] == 'ON' else 'ON'
+        with state_lock:
+            new_val = 'OFF' if system_state['area2'] == 'ON' else 'ON'
         send_mqtt_control('area2', new_val)
         add_audit_log('TOGGLE_AREA2', session.get('username', 'unknown'), {'new_state': new_val})
         return jsonify({'success': True, 'area2': new_val})
@@ -795,12 +803,13 @@ def simulation_loop():
         while True:
             # --- Update simulated grid values ---
             sim = simulate_grid_values()
-            system_state['gen_mw'] = sim['generation_w']
-            system_state['load_mw'] = sim['load_w']
-            system_state['voltage'] = sim['voltage']
-            system_state['frequency'] = sim['frequency']
-            system_state['gen_rpm'] = sim['rpm']
-            system_state['status'] = 'ONLINE'
+            with state_lock:
+                system_state['gen_mw'] = sim['generation_w']
+                system_state['load_mw'] = sim['load_w']
+                system_state['voltage'] = sim['voltage']
+                system_state['frequency'] = sim['frequency']
+                system_state['gen_rpm'] = sim['rpm']
+                system_state['status'] = 'ONLINE'
 
             # --- Billing: gradual accumulation ---
             system_state['calculated_bill'] += sim['load_w'] * 0.000001

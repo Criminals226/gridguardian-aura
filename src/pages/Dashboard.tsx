@@ -66,10 +66,6 @@ export default function Dashboard() {
     } else if (action === 'toggle_area2') {
       const current = (localOverrides.area2 ?? state?.area2) === 'ON' ? 'OFF' : 'ON';
       setLocalOverrides(prev => ({ ...prev, area2: current }));
-    } else if (action === 'simulate_attack') {
-      setLocalOverrides(prev => ({ ...prev, price_rate: 50.0, security_level: 'CRITICAL', attack_score: 0.95 }));
-    } else if (action === 'reset_price') {
-      setLocalOverrides(prev => ({ ...prev, price_rate: 0.25, security_level: 'NORMAL', attack_score: 0, calculated_bill: 0 }));
     }
 
     try {
@@ -79,6 +75,19 @@ export default function Dashboard() {
       toast.info(`Local update: ${action.replace('_', ' ')}`);
     } finally {
       setLoadingControl(null);
+      if (action === 'toggle_area1') {
+        setLocalOverrides(prev => {
+          const next = { ...prev };
+          delete next.area1;
+          return next;
+        });
+      } else if (action === 'toggle_area2') {
+        setLocalOverrides(prev => {
+          const next = { ...prev };
+          delete next.area2;
+          return next;
+        });
+      }
     }
   };
 
@@ -200,24 +209,30 @@ export default function Dashboard() {
               <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
                 Power Distribution
               </h2>
-              <div className="space-y-6">
-                <MeterBar
-                  value={Math.round(effectiveState?.gen_mw ?? 0)}
-                  max={20000}
-                  label="Generation"
-                  unit="W"
-                  warningThreshold={16000}
-                  criticalThreshold={19000}
-                />
-                <MeterBar
-                  value={Math.round(effectiveState?.load_mw ?? 0)}
-                  max={20000}
-                  label="Load"
-                  unit="W"
-                  warningThreshold={16000}
-                  criticalThreshold={19000}
-                />
-              </div>
+              {(() => {
+                const genFmt = formatPower(effectiveState?.gen_mw ?? 0);
+                const loadFmt = formatPower(effectiveState?.load_mw ?? 0);
+                return (
+                  <div className="space-y-6">
+                    <MeterBar
+                      value={genFmt.value}
+                      max={genFmt.unit === 'kW' ? 20 : 20000}
+                      label="Generation"
+                      unit={genFmt.unit}
+                      warningThreshold={genFmt.unit === 'kW' ? 16 : 16000}
+                      criticalThreshold={genFmt.unit === 'kW' ? 19 : 19000}
+                    />
+                    <MeterBar
+                      value={loadFmt.value}
+                      max={loadFmt.unit === 'kW' ? 20 : 20000}
+                      label="Load"
+                      unit={loadFmt.unit}
+                      warningThreshold={loadFmt.unit === 'kW' ? 16 : 16000}
+                      criticalThreshold={loadFmt.unit === 'kW' ? 19 : 19000}
+                    />
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="rounded-lg border border-border bg-card p-6">
