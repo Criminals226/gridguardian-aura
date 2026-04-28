@@ -7,7 +7,14 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
  * - REPLAY: Replay Attack — re-sends previously captured legitimate traffic.
  * - DOS:    Denial of Service — floods the system to disrupt availability.
  */
-export type AttackType = 'NONE' | 'FDI' | 'REPLAY' | 'DOS';
+export type AttackType =
+  | 'NONE'
+  | 'FDI'
+  | 'REPLAY'
+  | 'DOS'
+  | 'LOAD_SWITCH'
+  | 'METER_TAMPER'
+  | 'MITM';
 
 export interface AttackState {
   /** Current attack type being simulated. */

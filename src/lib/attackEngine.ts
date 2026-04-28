@@ -104,6 +104,81 @@ function simulateDoS(): null {
   return null;
 }
 
+/**
+ * Load Switching Attack — forces a substation cutoff by zeroing
+ * area switches, load, generation, and voltage.
+ */
+function simulateLoadSwitch(data: GridSample): GridSample {
+  const tampered: GridSample = { ...data };
+  tampered.area1 = 'OFF';
+  tampered.area2 = 'OFF';
+  if ('load_mw' in tampered) {
+    tampered.load_mw = 0;
+  } else {
+    tampered.load = 0;
+  }
+  if ('gen_mw' in tampered) {
+    tampered.gen_mw = 0;
+  } else {
+    tampered.generation = 0;
+  }
+  tampered.voltage = 0;
+  return tampered;
+}
+
+/**
+ * Smart Meter Tampering — inflates reported load to simulate
+ * billing fraud. Other fields remain untouched so an imbalance
+ * vs generation becomes detectable.
+ */
+function simulateMeterTamper(data: GridSample): GridSample {
+  const tampered: GridSample = { ...data };
+  const factor = 1.4 + Math.random() * 0.8; // 1.4..2.2
+  if (typeof tampered.load_mw === 'number') {
+    tampered.load_mw = Math.round(tampered.load_mw * factor);
+  } else if (typeof tampered.load === 'number') {
+    tampered.load = Math.round(tampered.load * factor);
+  } else {
+    tampered.load = Math.round(1000 * factor);
+  }
+  return tampered;
+}
+
+/** Phase flag used to alternate the sign of MITM jitter each tick. */
+let mitmPhase = false;
+
+/**
+ * Man-in-the-Middle — adds bounded jitter to voltage / frequency /
+ * load to simulate packet manipulation. Values stay within
+ * physically plausible ranges.
+ */
+function simulateMITM(data: GridSample): GridSample {
+  const tampered: GridSample = { ...data };
+  mitmPhase = !mitmPhase;
+  const sign = mitmPhase ? 1 : -1;
+
+  const vJitter = (8 + Math.random() * 12) * sign;          // ±8..20 V
+  const fJitter = (0.3 + Math.random() * 0.6) * sign;       // ±0.3..0.9 Hz
+  const lJitter = (200 + Math.random() * 600) * sign;       // ±200..800 W
+
+  const baseV = typeof tampered.voltage === 'number' ? tampered.voltage : 230;
+  const baseF = typeof tampered.frequency === 'number' ? tampered.frequency : 50;
+
+  tampered.voltage = Math.max(180, Math.min(280, Math.round(baseV + vJitter)));
+  tampered.frequency = Math.max(
+    48,
+    Math.min(52, Number((baseF + fJitter).toFixed(2))),
+  );
+
+  if (typeof tampered.load_mw === 'number') {
+    tampered.load_mw = Math.max(0, Math.round(tampered.load_mw + lJitter));
+  } else if (typeof tampered.load === 'number') {
+    tampered.load = Math.max(0, Math.round(tampered.load + lJitter));
+  }
+
+  return tampered;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Public API                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -138,6 +213,12 @@ export function applyAttack(
       return simulateReplay(data);
     case 'DOS':
       return simulateDoS();
+    case 'LOAD_SWITCH':
+      return simulateLoadSwitch(data);
+    case 'METER_TAMPER':
+      return simulateMeterTamper(data);
+    case 'MITM':
+      return simulateMITM(data);
     case 'NONE':
     default:
       return { ...data };

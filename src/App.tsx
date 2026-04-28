@@ -13,6 +13,7 @@ import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Security from "@/pages/Security";
 import SOC from "@/pages/SOC";
+import AttackLab from "@/pages/AttackLab";
 import Historical from "@/pages/Historical";
 import Logs from "@/pages/Logs";
 import NotFound from "@/pages/NotFound";
@@ -98,6 +99,7 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="security" element={<Security />} />
         <Route path="soc" element={<SOC />} />
+        <Route path="attack-lab" element={<AttackLab />} />
         <Route path="historical" element={<Historical />} />
         <Route path="logs" element={<Logs />} />
       </Route>
