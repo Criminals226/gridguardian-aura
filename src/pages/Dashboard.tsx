@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, SystemState, SecurityStatus, formatPower } from '@/lib/api';
-import { useScada } from '@/contexts/ScadaContext';
+import { useSocket } from '@/hooks/useSocket';
 import { DataCard } from '@/components/scada/DataCard';
 import { GaugeCircular } from '@/components/scada/GaugeCircular';
 import { MeterBar } from '@/components/scada/MeterBar';
@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { data: lastState, isConnected, mqttConnected } = useScada();
+  const { lastState, isConnected, mqttConnected } = useSocket();
   const [loadingControl, setLoadingControl] = useState<string | null>(null);
   
   // Fetch state via polling as fallback

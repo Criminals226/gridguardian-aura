@@ -8,7 +8,6 @@ import {
   postureFromScore,
   decayScore,
   buildThreatLog,
-  resetDetectorMemory,
   type SecurityPostureLevel,
 } from '@/lib/threatDetection';
 
@@ -41,13 +40,11 @@ export function useSocket() {
   const scoreRef = useRef(0);
 
   // Pull current attack state from the global AttackContext.
-  const { type: attackType, active: attackActive, params: attackParams } = useAttack();
+  const { type: attackType, active: attackActive } = useAttack();
   const attackRef = useRef(attackType);
-  const paramsRef = useRef(attackParams);
   useEffect(() => {
     attackRef.current = attackActive ? attackType : 'NONE';
-    paramsRef.current = attackParams;
-  }, [attackType, attackActive, attackParams]);
+  }, [attackType, attackActive]);
 
   // Helper: register a detection result into score / posture / threat log.
   const ingestDetection = useCallback((sample: GridSample | null) => {
@@ -89,11 +86,7 @@ export function useSocket() {
 
     socket.on('state_update', (state: SystemState) => {
       // 1. Raw SCADA data → 2. Red Team transform → 3. Detection pipeline.
-      const tampered = applyAttack(
-        state as unknown as GridSample,
-        attackRef.current,
-        paramsRef.current,
-      );
+      const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
 
       // 3a. DoS → blackout. Run detector with null so it logs the event.
       if (tampered === null) {
@@ -130,7 +123,6 @@ export function useSocket() {
     return () => {
       socket.disconnect();
       resetAttackEngine();
-      resetDetectorMemory();
     };
   }, [ingestDetection]);
 
@@ -139,7 +131,6 @@ export function useSocket() {
     scoreRef.current = 0;
     setAttackScore(0);
     setPosture('NORMAL');
-    resetDetectorMemory();
   }, []);
 
   return {

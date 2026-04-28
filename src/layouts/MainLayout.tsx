@@ -2,8 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
-import { useScada } from '@/contexts/ScadaContext';
-import { ThreatAlertBanner } from '@/components/scada/ThreatAlertBanner';
+import { useSocket } from '@/hooks/useSocket';
 import {
   LayoutDashboard,
   Shield,
@@ -29,7 +28,7 @@ const navigation = [
 export default function MainLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { isConnected, threat, posture } = useScada();
+  const { isConnected } = useSocket();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -163,9 +162,7 @@ export default function MainLayout() {
         </header>
 
         {/* Page content */}
-        <div className="p-6 lg:p-8 space-y-6">
-          {/* Global threat alert — visible on every page */}
-          <ThreatAlertBanner threat={threat} posture={posture} />
+        <div className="p-6 lg:p-8">
           <Outlet />
         </div>
       </main>
