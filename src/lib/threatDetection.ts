@@ -12,7 +12,13 @@ export type ThreatCategory =
   | 'FREQUENCY_ANOMALY'
   | 'FDI_ATTACK'
   | 'DOS_ATTACK'
-  | 'REPLAY_SUSPECTED';
+  | 'REPLAY_SUSPECTED'
+  | 'LOAD_SWITCH_ATTACK'
+  | 'METER_TAMPER_ATTACK'
+  | 'MITM_ATTACK';
+
+/** Rolling 3-sample voltage buffer used for MITM jitter detection. */
+const voltageHistory: number[] = [];
 
 export interface DetectionResult {
   detected: boolean;
@@ -65,6 +71,70 @@ export function detectThreat(data: GridSample | null | undefined): DetectionResu
   const voltage = typeof data.voltage === 'number' ? data.voltage : NOMINAL_VOLTAGE;
   const frequency =
     typeof data.frequency === 'number' ? data.frequency : NOMINAL_FREQUENCY;
+
+  const loadVal =
+    typeof data.load_mw === 'number'
+      ? data.load_mw
+      : typeof data.load === 'number'
+        ? data.load
+        : 1;
+  const genVal =
+    typeof data.gen_mw === 'number'
+      ? data.gen_mw
+      : typeof data.generation === 'number'
+        ? data.generation
+        : 0;
+
+  // 1b. Load Switching — total power loss
+  if (data.voltage === 0 && loadVal === 0) {
+    return {
+      detected: true,
+      category: 'LOAD_SWITCH_ATTACK',
+      subcategory: 'Area power cutoff',
+      severity: 'CRITICAL',
+      explanation:
+        'Total power loss detected — possible load switching attack. Both voltage and load dropped to zero simultaneously.',
+      score: 17,
+    };
+  }
+
+  // 1c. Meter Tamper — load far exceeds generation
+  if (genVal > 0) {
+    const imbalance = loadVal / genVal;
+    if (imbalance > 1.35) {
+      return {
+        detected: true,
+        category: 'METER_TAMPER_ATTACK',
+        subcategory: 'Consumption inflation',
+        severity: 'WARNING',
+        explanation: `Meter reading ${Math.round(
+          imbalance * 100,
+        )}% of generation — possible smart meter tampering or billing fraud.`,
+        score: 7,
+      };
+    }
+  }
+
+  // 1d. MITM — high-frequency voltage jitter across recent samples
+  voltageHistory.push(voltage);
+  if (voltageHistory.length > 3) voltageHistory.shift();
+  if (voltageHistory.length === 3) {
+    const max = Math.max(...voltageHistory);
+    const min = Math.min(...voltageHistory);
+    const range = max - min;
+    if (range > 18) {
+      return {
+        detected: true,
+        category: 'MITM_ATTACK',
+        subcategory: 'Packet manipulation jitter',
+        severity: 'WARNING',
+        explanation: `Voltage fluctuated ${range.toFixed(
+          1,
+        )}V across 3 consecutive readings — consistent with MITM packet manipulation.`,
+        score: 9,
+      };
+    }
+  }
 
   const vDelta = Math.abs(voltage - NOMINAL_VOLTAGE);
   const fDelta = Math.abs(frequency - NOMINAL_FREQUENCY);
