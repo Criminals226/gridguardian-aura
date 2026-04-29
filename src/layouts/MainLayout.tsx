@@ -5,7 +5,6 @@ import { StatusIndicator } from '@/components/scada/StatusIndicator';
 import { useSocketContext } from '@/contexts/SocketContext';
 import {
   LayoutDashboard,
-  Shield,
   BarChart3,
   FileText,
   LogOut,
@@ -13,7 +12,6 @@ import {
   User,
   Menu,
   X,
-  Target,
   FlaskConical,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -21,8 +19,6 @@ import { useState } from 'react';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Security', href: '/security', icon: Shield },
-  { name: 'SOC', href: '/soc', icon: Target },
   { name: 'Attack Lab', href: '/attack-lab', icon: FlaskConical },
   { name: 'Historical', href: '/historical', icon: BarChart3 },
   { name: 'Logs', href: '/logs', icon: FileText },
