@@ -40,7 +40,7 @@ function statusOf(value: number, nominal: number): 'normal' | 'anomaly' {
 
 export default function AttackLab() {
   const { type: activeType, active, startedAt, startAttack, stopAttack } = useAttack();
-  const { lastState, threats } = useSocketContext();
+  const { data: lastState, logs } = useScada();
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
