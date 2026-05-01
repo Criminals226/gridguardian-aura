@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ThreatFeed } from '@/components/scada/ThreatFeed';
 import { useAttack, type AttackType } from '@/contexts/AttackContext';
-import { useSocketContext } from '@/contexts/SocketContext';
+import { useScada } from '@/contexts/ScadaContext';
 import { cn } from '@/lib/utils';
 import { FlaskConical, Play, Square } from 'lucide-react';
 
