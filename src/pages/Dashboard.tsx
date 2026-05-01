@@ -125,6 +125,17 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {blackout && (
+        <div className="rounded-lg border-2 border-scada-critical bg-scada-critical/10 p-6 text-center font-mono animate-pulse-glow">
+          <div className="text-2xl font-bold text-scada-critical uppercase tracking-widest">
+            ⚠ SYSTEM OFFLINE
+          </div>
+          <div className="text-xs text-foreground/70 mt-2">
+            Telemetry blackout detected — all live values unavailable (DoS).
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="bg-card border border-border">
