@@ -20,11 +20,8 @@ interface AttackDefinition {
 
 const ATTACKS: AttackDefinition[] = [
   { type: 'FDI', name: 'FDI', description: 'Inject false voltage & frequency readings', severity: 'CRITICAL' },
-  { type: 'REPLAY', name: 'Replay', description: 'Re-emit captured legitimate traffic', severity: 'WARNING' },
-  { type: 'DOS', name: 'DoS', description: 'Simulate telemetry blackout', severity: 'CRITICAL' },
-  { type: 'LOAD_SWITCH', name: 'Load Switch', description: 'Force area power cutoff', severity: 'CRITICAL' },
-  { type: 'METER_TAMPER', name: 'Meter Tamper', description: 'Inflate consumption readings', severity: 'WARNING' },
-  { type: 'MITM', name: 'MITM', description: 'Inject packet jitter & delays', severity: 'WARNING' },
+  { type: 'REPLAY', name: 'Replay', description: 'Re-emit captured legitimate traffic — values freeze', severity: 'WARNING' },
+  { type: 'DOS', name: 'DoS', description: 'Simulate telemetry blackout — system goes offline', severity: 'CRITICAL' },
 ];
 
 const NOMINAL_VOLTAGE = 230;
