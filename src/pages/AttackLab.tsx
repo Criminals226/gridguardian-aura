@@ -207,7 +207,7 @@ export default function AttackLab() {
             </table>
           </div>
 
-          <ThreatFeed threats={threats ?? []} maxItems={10} />
+          <ThreatFeed threats={logs ?? []} maxItems={10} />
         </Card>
       </div>
     </div>
