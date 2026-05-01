@@ -118,7 +118,9 @@ const App = () => (
         <AuthProvider>
           <AttackProvider>
             <SocketProvider>
-              <AppRoutes />
+              <ScadaProvider>
+                <AppRoutes />
+              </ScadaProvider>
             </SocketProvider>
           </AttackProvider>
         </AuthProvider>
