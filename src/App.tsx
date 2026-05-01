@@ -98,6 +98,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="attack-lab" element={<AttackLab />} />
+        <Route path="security" element={<Security />} />
         <Route path="historical" element={<Historical />} />
         <Route path="logs" element={<Logs />} />
       </Route>
