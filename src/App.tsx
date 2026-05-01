@@ -7,11 +7,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { useAuth } from "@/hooks/useAuth";
 import { AttackProvider } from "@/contexts/AttackContext";
 import { SocketProvider } from "@/contexts/SocketContext";
+import { ScadaProvider } from "@/contexts/ScadaContext";
 
 // Pages
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import AttackLab from "@/pages/AttackLab";
+import Security from "@/pages/Security";
 import Historical from "@/pages/Historical";
 import Logs from "@/pages/Logs";
 import NotFound from "@/pages/NotFound";
