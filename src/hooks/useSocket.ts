@@ -88,9 +88,10 @@ export function useSocket() {
       // 1. Raw SCADA data → 2. Red Team transform → 3. Detection pipeline.
       const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
 
-      // 3a. DoS → blackout. Run detector with null so it logs the event.
+      // 3a. DoS → blackout. Commit null to UI so consumers can render N/A.
       if (tampered === null) {
         ingestDetection(null);
+        setLastState(null);
         return;
       }
 
