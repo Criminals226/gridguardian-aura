@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ThreatFeed } from '@/components/scada/ThreatFeed';
 import { useAttack, type AttackType } from '@/contexts/AttackContext';
-import { useSocketContext } from '@/contexts/SocketContext';
+import { useScada } from '@/contexts/ScadaContext';
 import { cn } from '@/lib/utils';
 import { FlaskConical, Play, Square } from 'lucide-react';
 
@@ -20,11 +20,8 @@ interface AttackDefinition {
 
 const ATTACKS: AttackDefinition[] = [
   { type: 'FDI', name: 'FDI', description: 'Inject false voltage & frequency readings', severity: 'CRITICAL' },
-  { type: 'REPLAY', name: 'Replay', description: 'Re-emit captured legitimate traffic', severity: 'WARNING' },
-  { type: 'DOS', name: 'DoS', description: 'Simulate telemetry blackout', severity: 'CRITICAL' },
-  { type: 'LOAD_SWITCH', name: 'Load Switch', description: 'Force area power cutoff', severity: 'CRITICAL' },
-  { type: 'METER_TAMPER', name: 'Meter Tamper', description: 'Inflate consumption readings', severity: 'WARNING' },
-  { type: 'MITM', name: 'MITM', description: 'Inject packet jitter & delays', severity: 'WARNING' },
+  { type: 'REPLAY', name: 'Replay', description: 'Re-emit captured legitimate traffic — values freeze', severity: 'WARNING' },
+  { type: 'DOS', name: 'DoS', description: 'Simulate telemetry blackout — system goes offline', severity: 'CRITICAL' },
 ];
 
 const NOMINAL_VOLTAGE = 230;
@@ -43,7 +40,7 @@ function statusOf(value: number, nominal: number): 'normal' | 'anomaly' {
 
 export default function AttackLab() {
   const { type: activeType, active, startedAt, startAttack, stopAttack } = useAttack();
-  const { lastState, threats } = useSocketContext();
+  const { data: lastState, logs } = useScada();
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -210,7 +207,7 @@ export default function AttackLab() {
             </table>
           </div>
 
-          <ThreatFeed threats={threats ?? []} maxItems={10} />
+          <ThreatFeed threats={logs ?? []} maxItems={10} />
         </Card>
       </div>
     </div>

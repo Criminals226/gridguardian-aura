@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
 import { useSocketContext } from '@/contexts/SocketContext';
+import { GlobalAlert } from '@/components/scada/GlobalAlert';
 import {
   LayoutDashboard,
   BarChart3,
@@ -13,6 +14,7 @@ import {
   Menu,
   X,
   FlaskConical,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -20,6 +22,7 @@ import { useState } from 'react';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Attack Lab', href: '/attack-lab', icon: FlaskConical },
+  { name: 'Security', href: '/security', icon: Shield },
   { name: 'Historical', href: '/historical', icon: BarChart3 },
   { name: 'Logs', href: '/logs', icon: FileText },
 ];
@@ -161,7 +164,8 @@ export default function MainLayout() {
         </header>
 
         {/* Page content */}
-        <div className="p-6 lg:p-8">
+        <div className="p-6 lg:p-8 space-y-4">
+          <GlobalAlert />
           <Outlet />
         </div>
       </main>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, SystemState, SecurityStatus, formatPower } from '@/lib/api';
-import { useSocketContext } from '@/contexts/SocketContext';
+import { api, SystemState, formatPower } from '@/lib/api';
+import { useScada } from '@/contexts/ScadaContext';
 import { DataCard } from '@/components/scada/DataCard';
 import { GaugeCircular } from '@/components/scada/GaugeCircular';
 import { MeterBar } from '@/components/scada/MeterBar';
@@ -25,10 +25,10 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { lastState, isConnected, mqttConnected } = useSocketContext();
+  const { data: scadaData, isConnected, mqttConnected } = useScada();
   const [loadingControl, setLoadingControl] = useState<string | null>(null);
-  
-  // Fetch state via polling as fallback
+
+  // Fetch state via polling as fallback (used only when socket has no sample yet).
   const { data: apiState } = useQuery({
     queryKey: ['systemState'],
     queryFn: api.getState,
@@ -43,8 +43,12 @@ export default function Dashboard() {
     retry: false,
   });
 
-  // Use socket data if available, otherwise fall back to API
-  const state: SystemState | undefined = lastState || apiState;
+  // DoS blackout: scadaData is explicitly null. Otherwise use socket sample,
+  // falling back to polled API state on initial load only.
+  const blackout = scadaData === null;
+  const state: SystemState | undefined = blackout
+    ? undefined
+    : (scadaData ?? apiState ?? undefined);
 
   const getStatusLevel = (level: string): 'normal' | 'warning' | 'critical' => {
     switch (level?.toUpperCase()) {
@@ -120,6 +124,17 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {blackout && (
+        <div className="rounded-lg border-2 border-scada-critical bg-scada-critical/10 p-6 text-center font-mono animate-pulse-glow">
+          <div className="text-2xl font-bold text-scada-critical uppercase tracking-widest">
+            ⚠ SYSTEM OFFLINE
+          </div>
+          <div className="text-xs text-foreground/70 mt-2">
+            Telemetry blackout detected — all live values unavailable (DoS).
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">

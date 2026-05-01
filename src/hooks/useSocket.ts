@@ -38,12 +38,15 @@ export function useSocket() {
   const [attackScore, setAttackScore] = useState(0);
   const [posture, setPosture] = useState<SecurityPostureLevel>('NORMAL');
   const scoreRef = useRef(0);
+  const lastLoggedCategoryRef = useRef<string | null>(null);
 
   // Pull current attack state from the global AttackContext.
   const { type: attackType, active: attackActive } = useAttack();
   const attackRef = useRef(attackType);
   useEffect(() => {
     attackRef.current = attackActive ? attackType : 'NONE';
+    // Reset dedup key when attack changes so a new attack always logs once.
+    lastLoggedCategoryRef.current = null;
   }, [attackType, attackActive]);
 
   // Helper: register a detection result into score / posture / threat log.
@@ -54,8 +57,14 @@ export function useSocket() {
       scoreRef.current = next;
       setAttackScore(Number(next.toFixed(2)));
       setPosture(postureFromScore(next));
-      setThreats((prev) => [buildThreatLog(result), ...prev].slice(0, 100));
+      // Dedup: only push a log when the threat category changes.
+      const cat = result.category ?? 'UNKNOWN';
+      if (lastLoggedCategoryRef.current !== cat) {
+        lastLoggedCategoryRef.current = cat;
+        setThreats((prev) => [buildThreatLog(result), ...prev].slice(0, 100));
+      }
     } else {
+      lastLoggedCategoryRef.current = null;
       const next = decayScore(scoreRef.current);
       if (next !== scoreRef.current) {
         scoreRef.current = next;
@@ -88,9 +97,10 @@ export function useSocket() {
       // 1. Raw SCADA data → 2. Red Team transform → 3. Detection pipeline.
       const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
 
-      // 3a. DoS → blackout. Run detector with null so it logs the event.
+      // 3a. DoS → blackout. Commit null to UI so consumers can render N/A.
       if (tampered === null) {
         ingestDetection(null);
+        setLastState(null);
         return;
       }
 

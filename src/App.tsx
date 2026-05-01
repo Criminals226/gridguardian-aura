@@ -7,11 +7,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { useAuth } from "@/hooks/useAuth";
 import { AttackProvider } from "@/contexts/AttackContext";
 import { SocketProvider } from "@/contexts/SocketContext";
+import { ScadaProvider } from "@/contexts/ScadaContext";
 
 // Pages
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import AttackLab from "@/pages/AttackLab";
+import Security from "@/pages/Security";
 import Historical from "@/pages/Historical";
 import Logs from "@/pages/Logs";
 import NotFound from "@/pages/NotFound";
@@ -96,6 +98,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="attack-lab" element={<AttackLab />} />
+        <Route path="security" element={<Security />} />
         <Route path="historical" element={<Historical />} />
         <Route path="logs" element={<Logs />} />
       </Route>
@@ -115,7 +118,9 @@ const App = () => (
         <AuthProvider>
           <AttackProvider>
             <SocketProvider>
-              <AppRoutes />
+              <ScadaProvider>
+                <AppRoutes />
+              </ScadaProvider>
             </SocketProvider>
           </AttackProvider>
         </AuthProvider>

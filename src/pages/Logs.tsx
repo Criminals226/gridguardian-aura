@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, ThreatLog, AuditLog } from '@/lib/api';
+import { useScada } from '@/contexts/ScadaContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,6 +28,7 @@ import { cn } from '@/lib/utils';
 export default function Logs() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedThreat, setSelectedThreat] = useState<ThreatLog | null>(null);
+  const { logs: liveLogs } = useScada();
 
   const { data: threatLogs = [], refetch: refetchThreats, isLoading: loadingThreats } = useQuery({
     queryKey: ['threatLogs'],
@@ -40,7 +42,18 @@ export default function Logs() {
     retry: false,
   });
 
-  const filteredThreats = threatLogs.filter((log) =>
+  // Merge backend + live client-detector logs, dedup by id, newest first.
+  const mergedThreats = useMemo<ThreatLog[]>(() => {
+    const byId = new Map<number, ThreatLog>();
+    for (const log of [...liveLogs, ...threatLogs]) {
+      byId.set(log.id, log);
+    }
+    return Array.from(byId.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+  }, [liveLogs, threatLogs]);
+
+  const filteredThreats = mergedThreats.filter((log) =>
     JSON.stringify(log).toLowerCase().includes(searchTerm.toLowerCase())
   );
 

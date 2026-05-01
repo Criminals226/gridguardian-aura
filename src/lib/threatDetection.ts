@@ -12,13 +12,7 @@ export type ThreatCategory =
   | 'FREQUENCY_ANOMALY'
   | 'FDI_ATTACK'
   | 'DOS_ATTACK'
-  | 'REPLAY_SUSPECTED'
-  | 'LOAD_SWITCH_ATTACK'
-  | 'METER_TAMPER_ATTACK'
-  | 'MITM_ATTACK';
-
-/** Rolling 3-sample voltage buffer used for MITM jitter detection. */
-const voltageHistory: number[] = [];
+  | 'REPLAY_SUSPECTED';
 
 export interface DetectionResult {
   detected: boolean;
@@ -34,8 +28,8 @@ export interface DetectionResult {
 /* -------------------------------------------------------------------------- */
 
 const NOMINAL_VOLTAGE = 230;
-const VOLTAGE_WARN_DELTA = 15;   // ±15 V → warning
-const VOLTAGE_CRIT_DELTA = 30;   // ±30 V → critical / FDI candidate
+const VOLTAGE_WARN_DELTA = 15;
+const VOLTAGE_CRIT_DELTA = 30;
 
 const NOMINAL_FREQUENCY = 50;
 const FREQ_WARN_DELTA = 0.5;
@@ -49,89 +43,49 @@ const FREQ_CRIT_DELTA = 1.0;
  * Inspect a single SCADA telemetry sample and decide whether it
  * represents a security-relevant anomaly.
  *
- * Detects:
- *  - DoS              → `data` is null/undefined
- *  - FDI              → voltage AND frequency simultaneously out of band
- *  - Voltage anomaly  → voltage outside warn/critical thresholds
- *  - Frequency anomaly → frequency outside warn/critical thresholds
+ * @param current  Latest (possibly tampered) sample, or null on blackout.
+ * @param prev     Previous committed sample (used for replay detection).
  */
-export function detectThreat(data: GridSample | null | undefined): DetectionResult {
-  // 1. DoS — telemetry blackout
-  if (data === null || data === undefined) {
+export function detectThreat(
+  current: GridSample | null | undefined,
+  prev?: GridSample | null,
+): DetectionResult {
+  // 1. DoS — telemetry blackout (null sample OR null voltage)
+  if (
+    current === null ||
+    current === undefined ||
+    current.voltage === null
+  ) {
     return {
       detected: true,
       category: 'DOS_ATTACK',
       subcategory: 'Telemetry blackout',
       severity: 'CRITICAL',
-      explanation: 'No telemetry received — possible Denial-of-Service against SCADA link.',
-      score: 15,
-    };
-  }
-
-  const voltage = typeof data.voltage === 'number' ? data.voltage : NOMINAL_VOLTAGE;
-  const frequency =
-    typeof data.frequency === 'number' ? data.frequency : NOMINAL_FREQUENCY;
-
-  const loadVal =
-    typeof data.load_mw === 'number'
-      ? data.load_mw
-      : typeof data.load === 'number'
-        ? data.load
-        : 1;
-  const genVal =
-    typeof data.gen_mw === 'number'
-      ? data.gen_mw
-      : typeof data.generation === 'number'
-        ? data.generation
-        : 0;
-
-  // 1b. Load Switching — total power loss
-  if (data.voltage === 0 && loadVal === 0) {
-    return {
-      detected: true,
-      category: 'LOAD_SWITCH_ATTACK',
-      subcategory: 'Area power cutoff',
-      severity: 'CRITICAL',
       explanation:
-        'Total power loss detected — possible load switching attack. Both voltage and load dropped to zero simultaneously.',
-      score: 17,
+        'No telemetry received — possible Denial-of-Service against SCADA link.',
+      score: 16,
     };
   }
 
-  // 1c. Meter Tamper — load far exceeds generation
-  if (genVal > 0) {
-    const imbalance = loadVal / genVal;
-    if (imbalance > 1.35) {
-      return {
-        detected: true,
-        category: 'METER_TAMPER_ATTACK',
-        subcategory: 'Consumption inflation',
-        severity: 'WARNING',
-        explanation: `Meter reading ${Math.round(
-          imbalance * 100,
-        )}% of generation — possible smart meter tampering or billing fraud.`,
-        score: 7,
-      };
-    }
-  }
+  const voltage =
+    typeof current.voltage === 'number' ? current.voltage : NOMINAL_VOLTAGE;
+  const frequency =
+    typeof current.frequency === 'number' ? current.frequency : NOMINAL_FREQUENCY;
 
-  // 1d. MITM — high-frequency voltage jitter across recent samples
-  voltageHistory.push(voltage);
-  if (voltageHistory.length > 3) voltageHistory.shift();
-  if (voltageHistory.length === 3) {
-    const max = Math.max(...voltageHistory);
-    const min = Math.min(...voltageHistory);
-    const range = max - min;
-    if (range > 18) {
+  // 2. Replay — identical timestamp + identical values vs previous sample
+  if (prev && prev.timestamp && current.timestamp) {
+    const sameTs = current.timestamp === prev.timestamp;
+    const sameV = current.voltage === prev.voltage;
+    const sameF = current.frequency === prev.frequency;
+    if (sameTs && sameV && sameF) {
       return {
         detected: true,
-        category: 'MITM_ATTACK',
-        subcategory: 'Packet manipulation jitter',
+        category: 'REPLAY_SUSPECTED',
+        subcategory: 'Frozen telemetry packet',
         severity: 'WARNING',
-        explanation: `Voltage fluctuated ${range.toFixed(
-          1,
-        )}V across 3 consecutive readings — consistent with MITM packet manipulation.`,
-        score: 9,
+        explanation:
+          'Identical telemetry packet re-observed — possible replay attack.',
+        score: 8,
       };
     }
   }
@@ -144,7 +98,7 @@ export function detectThreat(data: GridSample | null | undefined): DetectionResu
   const freqCritical = fDelta >= FREQ_CRIT_DELTA;
   const freqWarn = fDelta >= FREQ_WARN_DELTA;
 
-  // 2. FDI — correlated voltage + frequency drift
+  // 3. FDI — correlated voltage + frequency drift
   if (voltageCritical && freqCritical) {
     return {
       detected: true,
@@ -158,7 +112,7 @@ export function detectThreat(data: GridSample | null | undefined): DetectionResu
     };
   }
 
-  // 3. Voltage anomaly
+  // 4. Voltage anomaly
   if (voltageCritical) {
     return {
       detected: true,
@@ -182,7 +136,7 @@ export function detectThreat(data: GridSample | null | undefined): DetectionResu
     };
   }
 
-  // 4. Frequency anomaly (standalone)
+  // 5. Frequency anomaly
   if (freqCritical) {
     return {
       detected: true,
@@ -213,20 +167,12 @@ export function detectThreat(data: GridSample | null | undefined): DetectionResu
 /* Posture & scoring                                                          */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Map a numeric attack score (0..20) to a security posture level.
- * Thresholds align with SecurityPosture component zone markers (5 / 15).
- */
 export function postureFromScore(score: number): SecurityPostureLevel {
   if (score >= 15) return 'CRITICAL';
   if (score >= 5) return 'WARNING';
   return 'NORMAL';
 }
 
-/**
- * Exponentially decay the running attack score so the system can
- * recover to NORMAL once anomalies stop arriving.
- */
 export function decayScore(score: number, factor = 0.92): number {
   const next = score * factor;
   return next < 0.05 ? 0 : Number(next.toFixed(2));
