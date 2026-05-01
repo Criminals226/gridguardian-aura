@@ -25,10 +25,10 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { lastState, isConnected, mqttConnected } = useSocketContext();
+  const { data: scadaData, isConnected, mqttConnected } = useScada();
   const [loadingControl, setLoadingControl] = useState<string | null>(null);
-  
-  // Fetch state via polling as fallback
+
+  // Fetch state via polling as fallback (used only when socket has no sample yet).
   const { data: apiState } = useQuery({
     queryKey: ['systemState'],
     queryFn: api.getState,
@@ -43,8 +43,12 @@ export default function Dashboard() {
     retry: false,
   });
 
-  // Use socket data if available, otherwise fall back to API
-  const state: SystemState | undefined = lastState || apiState;
+  // DoS blackout: scadaData is explicitly null. Otherwise use socket sample,
+  // falling back to polled API state on initial load only.
+  const blackout = scadaData === null;
+  const state: SystemState | undefined = blackout
+    ? undefined
+    : (scadaData ?? apiState ?? undefined);
 
   const getStatusLevel = (level: string): 'normal' | 'warning' | 'critical' => {
     switch (level?.toUpperCase()) {
