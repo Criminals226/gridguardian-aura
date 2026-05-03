@@ -57,30 +57,36 @@ export function useSocket() {
     }
   }, [attackType, attackActive]);
 
+  // Track previous committed sample so detector can spot frozen telemetry (Replay).
+  const prevSampleRef = useRef<GridSample | null>(null);
+
   // Helper: register a detection result into score / posture / threat log.
-  const ingestDetection = useCallback((sample: GridSample | null) => {
-    const result = detectThreat(sample);
-    if (result.detected) {
-      const next = Math.min(20, scoreRef.current + result.score);
-      scoreRef.current = next;
-      setAttackScore(Number(next.toFixed(2)));
-      setPosture(postureFromScore(next));
-      // Dedup: only push a log when the threat category changes.
-      const cat = result.category ?? 'UNKNOWN';
-      if (lastLoggedCategoryRef.current !== cat) {
-        lastLoggedCategoryRef.current = cat;
-        setThreats((prev) => [buildThreatLog(result), ...prev].slice(0, 100));
-      }
-    } else {
-      lastLoggedCategoryRef.current = null;
-      const next = decayScore(scoreRef.current);
-      if (next !== scoreRef.current) {
+  const ingestDetection = useCallback(
+    (sample: GridSample | null, prev: GridSample | null) => {
+      const result = detectThreat(sample, prev);
+      if (result.detected) {
+        const next = Math.min(20, scoreRef.current + result.score);
         scoreRef.current = next;
-        setAttackScore(next);
+        setAttackScore(Number(next.toFixed(2)));
         setPosture(postureFromScore(next));
+        // Dedup: only push a log when the threat category changes.
+        const cat = result.category ?? 'UNKNOWN';
+        if (lastLoggedCategoryRef.current !== cat) {
+          lastLoggedCategoryRef.current = cat;
+          setThreats((prev) => [buildThreatLog(result), ...prev].slice(0, 100));
+        }
+      } else {
+        lastLoggedCategoryRef.current = null;
+        const next = decayScore(scoreRef.current);
+        if (next !== scoreRef.current) {
+          scoreRef.current = next;
+          setAttackScore(next);
+          setPosture(postureFromScore(next));
+        }
       }
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     const socket = io(window.location.origin, {
@@ -105,15 +111,27 @@ export function useSocket() {
       // 1. Raw SCADA data → 2. Red Team transform → 3. Detection pipeline.
       const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
 
+      // Debug — verify pipeline is running and replay is freezing values.
+      if (attackRef.current.active) {
+        console.log(
+          '[Pipeline] attack=%s voltage=%o ts=%o',
+          attackRef.current.type,
+          tampered?.voltage,
+          tampered?.timestamp,
+        );
+      }
+
       // 3a. DoS → blackout. Commit null to UI so consumers can render N/A.
       if (tampered === null) {
-        ingestDetection(null);
+        ingestDetection(null, prevSampleRef.current);
+        prevSampleRef.current = null;
         setLastState(null);
         return;
       }
 
-      // 3b. Run detector on the (possibly tampered) sample.
-      ingestDetection(tampered);
+      // 3b. Run detector on the (possibly tampered) sample, comparing to prev.
+      ingestDetection(tampered, prevSampleRef.current);
+      prevSampleRef.current = tampered;
 
       // 4. Commit sample to UI state.
       setLastState(tampered as unknown as SystemState);
