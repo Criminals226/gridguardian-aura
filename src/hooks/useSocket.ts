@@ -42,11 +42,19 @@ export function useSocket() {
 
   // Pull current attack state from the global AttackContext.
   const { type: attackType, active: attackActive } = useAttack();
-  const attackRef = useRef(attackType);
+  const attackRef = useRef<{ type: typeof attackType; active: boolean }>({
+    type: attackType,
+    active: attackActive,
+  });
   useEffect(() => {
-    attackRef.current = attackActive ? attackType : 'NONE';
+    attackRef.current = { type: attackType, active: attackActive };
     // Reset dedup key when attack changes so a new attack always logs once.
     lastLoggedCategoryRef.current = null;
+    if (attackActive) {
+      console.log('[Attack] Active:', attackType);
+    } else {
+      console.log('[Attack] Stopped');
+    }
   }, [attackType, attackActive]);
 
   // Helper: register a detection result into score / posture / threat log.
