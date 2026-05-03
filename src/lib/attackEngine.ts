@@ -1,67 +1,32 @@
-import type { AttackType } from '@/contexts/AttackContext';
+import type { AttackType, AttackState } from '@/contexts/AttackContext';
 
 /**
  * Generic shape of a SCADA telemetry sample. Kept loose so the engine
  * can operate on any grid data object (hardware_state, system_state,
- * merged_state, etc.). Common fields:
- *  - voltage   (V)
- *  - frequency (Hz)
- *  - current   (A)
- *  - load / generation (W or MW)
+ * merged_state, etc.).
  */
 export interface GridSample {
   voltage?: number | null;
   frequency?: number | null;
   current?: number | null;
-  power?: number;
-  generation?: number;
-  load?: number;
-  timestamp?: number;
+  power?: number | null;
+  generation?: number | null;
+  gen_mw?: number | null;
+  load?: number | null;
+  load_mw?: number | null;
+  timestamp?: number | string;
   [key: string]: unknown;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Replay buffer — single frozen snapshot                                     */
+/* Persistent replay buffer (module scope — survives across ticks)            */
 /* -------------------------------------------------------------------------- */
 
 let replayBuffer: GridSample | null = null;
-let lastAttack: AttackType = 'NONE';
 
 /** Clear the replay buffer (call on logout / full reset). */
 export function resetAttackEngine(): void {
   replayBuffer = null;
-  lastAttack = 'NONE';
-}
-
-/* -------------------------------------------------------------------------- */
-/* Individual attack simulators                                               */
-/* -------------------------------------------------------------------------- */
-
-/** False Data Injection — voltage + frequency pushed far out of band. */
-function simulateFDI(data: GridSample): GridSample {
-  const tampered: GridSample = { ...data };
-  const baseV = typeof tampered.voltage === 'number' ? tampered.voltage : 230;
-  const baseF = typeof tampered.frequency === 'number' ? tampered.frequency : 50;
-  tampered.voltage = Math.round(baseV + 80);              // → ~310V
-  tampered.frequency = Number((baseF + 5).toFixed(2));    // → ~55Hz
-  if (typeof tampered.current === 'number') {
-    tampered.current = Math.round(tampered.current * 1.2);
-  }
-  return tampered;
-}
-
-/**
- * Replay Attack — return the first sample captured when the attack
- * started, identical every tick (values "freeze").
- */
-function simulateReplay(data: GridSample): GridSample {
-  if (!replayBuffer) replayBuffer = { ...data };
-  return { ...replayBuffer };
-}
-
-/** Denial of Service — telemetry blackout. */
-function simulateDoS(): null {
-  return null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -73,35 +38,58 @@ function simulateDoS(): null {
  *
  *   Raw Data → applyAttack → (Detection → UI)
  *
- * @param data    Latest legitimate telemetry sample.
- * @param attack  Attack type currently active.
- * @returns       The (possibly tampered) sample, or `null` for DoS.
+ * Accepts either an AttackType string or the full AttackState for
+ * backwards compatibility with the existing socket pipeline.
  */
 export function applyAttack(
   data: GridSample,
-  attack: AttackType,
+  attack: AttackType | Pick<AttackState, 'type' | 'active'>,
 ): GridSample | null {
-  // Reset replay buffer whenever the attack type changes (or stops).
-  if (attack !== lastAttack) {
-    if (attack !== 'REPLAY') replayBuffer = null;
-    lastAttack = attack;
+  // Normalize argument: allow caller to pass either a bare type or {type, active}.
+  const type: AttackType = typeof attack === 'string' ? attack : attack.type;
+  const active: boolean =
+    typeof attack === 'string' ? attack !== 'NONE' : attack.active;
+
+  // No attack → reset replay buffer and pass data through unchanged.
+  if (!active || type === 'NONE') {
+    replayBuffer = null;
+    return data;
   }
 
-  // While idle, continually refresh the buffer so that the moment
-  // REPLAY is triggered we have a fresh snapshot to lock onto.
-  if (attack === 'NONE') {
-    replayBuffer = { ...data };
-    return { ...data };
+  // FDI Attack — push voltage + frequency out of nominal band.
+  if (type === 'FDI') {
+    const baseV = typeof data.voltage === 'number' ? data.voltage : 230;
+    const baseF = typeof data.frequency === 'number' ? data.frequency : 50;
+    return {
+      ...data,
+      voltage: baseV + 30,
+      frequency: Number((baseF + 1).toFixed(2)),
+    };
   }
 
-  switch (attack) {
-    case 'FDI':
-      return simulateFDI(data);
-    case 'REPLAY':
-      return simulateReplay(data);
-    case 'DOS':
-      return simulateDoS();
-    default:
-      return { ...data };
+  // DoS Attack — telemetry blackout (null fields).
+  if (type === 'DOS') {
+    return {
+      ...data,
+      voltage: null,
+      frequency: null,
+      gen_mw: null,
+      load_mw: null,
+      generation: null,
+      load: null,
+      current: null,
+      power: null,
+    };
   }
+
+  // 🔴 REPLAY — capture once, then return the SAME snapshot every tick.
+  if (type === 'REPLAY') {
+    if (!replayBuffer) {
+      replayBuffer = { ...data };
+    }
+    // Return the frozen snapshot — including its original timestamp.
+    return { ...replayBuffer };
+  }
+
+  return data;
 }
