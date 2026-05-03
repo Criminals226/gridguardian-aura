@@ -50,9 +50,10 @@ export function applyAttack(
   const active: boolean =
     typeof attack === 'string' ? attack !== 'NONE' : attack.active;
 
-  // No attack → reset replay buffer and pass data through unchanged.
+  // No attack → keep buffer fresh with the latest sample so a future
+  // REPLAY attack can capture instantly. Pass data through unchanged.
   if (!active || type === 'NONE') {
-    replayBuffer = null;
+    replayBuffer = { ...data };
     return data;
   }
 
@@ -83,12 +84,16 @@ export function applyAttack(
   }
 
   // 🔴 REPLAY — capture once, then return the SAME snapshot every tick.
+  // The snapshot keeps its ORIGINAL timestamp so the detector can flag
+  // "frozen telemetry" while real wall-clock time keeps moving.
   if (type === 'REPLAY') {
     if (!replayBuffer) {
       replayBuffer = { ...data };
     }
-    // Return the frozen snapshot — including its original timestamp.
-    return { ...replayBuffer };
+    return {
+      ...replayBuffer,
+      timestamp: replayBuffer.timestamp, // explicit: do NOT advance
+    };
   }
 
   return data;

@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useScada } from '@/contexts/ScadaContext';
 import { api, GridDataPoint } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -20,6 +21,17 @@ import {
   Area,
 } from 'recharts';
 
+interface LivePoint {
+  timestamp: string;
+  gen_mw: number;
+  load_mw: number;
+  voltage: number;
+  frequency: number;
+  security_level: string;
+  attack_score: number;
+  time: string;
+}
+
 export default function Historical() {
   const [startDate, setStartDate] = useState<Date>(subHours(new Date(), 1));
   const [endDate, setEndDate] = useState<Date>(new Date());
@@ -29,6 +41,41 @@ export default function Historical() {
     queryFn: () => api.getHistoricalData(startDate, endDate),
     retry: false,
   });
+
+  // Live samples streamed via the SCADA pipeline (already attack-tampered).
+  const { data: scadaData, attackScore, posture } = useScada();
+  const [liveBuffer, setLiveBuffer] = useState<LivePoint[]>([]);
+  const lastSampledRef = useRef<number>(0);
+
+  useEffect(() => {
+    // Sample every ~1s. During DoS (scadaData === null) push a "blackout" point.
+    const now = Date.now();
+    if (now - lastSampledRef.current < 900) return;
+    lastSampledRef.current = now;
+    const ts = new Date(now).toISOString();
+    const point: LivePoint = scadaData
+      ? {
+          timestamp: ts,
+          gen_mw: scadaData.gen_mw ?? 0,
+          load_mw: scadaData.load_mw ?? 0,
+          voltage: scadaData.voltage ?? 0,
+          frequency: scadaData.frequency ?? 0,
+          security_level: posture,
+          attack_score: attackScore,
+          time: format(new Date(now), 'HH:mm:ss'),
+        }
+      : {
+          timestamp: ts,
+          gen_mw: 0,
+          load_mw: 0,
+          voltage: 0,
+          frequency: 0,
+          security_level: 'CRITICAL',
+          attack_score: attackScore,
+          time: format(new Date(now), 'HH:mm:ss'),
+        };
+    setLiveBuffer((prev) => [...prev.slice(-119), point]);
+  }, [scadaData, attackScore, posture]);
 
   const handleQuickRange = (hours: number) => {
     setEndDate(new Date());
@@ -45,10 +92,14 @@ export default function Historical() {
     return format(date, 'HH:mm');
   };
 
-  const chartData = data?.data?.map((point) => ({
-    ...point,
-    time: format(new Date(point.timestamp), 'HH:mm'),
-  })) || [];
+  // Prefer live buffer when populated so the chart reflects active attacks
+  // (Replay → flat line, DoS → drops to 0). Fall back to backend history.
+  const chartData = liveBuffer.length > 0
+    ? liveBuffer
+    : (data?.data?.map((point) => ({
+        ...point,
+        time: format(new Date(point.timestamp), 'HH:mm'),
+      })) || []);
 
   const exportData = () => {
     if (!data?.data) return;

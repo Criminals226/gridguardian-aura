@@ -53,6 +53,8 @@ export function useSocket() {
     if (attackActive) {
       console.log('[Attack] Active:', attackType);
     } else {
+      // Clear the replay buffer so the next REPLAY captures a fresh snapshot.
+      resetAttackEngine();
       console.log('[Attack] Stopped');
     }
   }, [attackType, attackActive]);
