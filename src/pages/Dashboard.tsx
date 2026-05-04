@@ -293,11 +293,7 @@ export default function Dashboard() {
 
         {/* SCADA Diagram Tab */}
         <TabsContent value="diagram">
-          <ScadaDiagram 
-            state={effectiveState} 
-            isConnected={isConnected} 
-            mqttConnected={mqttConnected || effectiveState?.mqtt_connected} 
-          />
+          <ScadaDiagram />
         </TabsContent>
       </Tabs>
 
