@@ -1,94 +1,24 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { SystemState, ThreatLog } from '@/lib/api';
-import { useAttack } from '@/contexts/AttackContext';
-import { applyAttack, resetAttackEngine, type GridSample } from '@/lib/attackEngine';
-import {
-  detectThreat,
-  postureFromScore,
-  decayScore,
-  buildThreatLog,
-  type SecurityPostureLevel,
-} from '@/lib/threatDetection';
+import { SystemState } from '@/lib/api';
 
-interface SocketEvents {
-  state_update: (state: SystemState) => void;
-  threat_detected: (threat: {
-    id: number;
-    layer: string;
-    threat: {
-      category: string;
-      subcategory: string;
-      severity: string;
-    };
-    explanation: string;
-    timestamp: string;
-  }) => void;
-  mqtt_status: (status: { connected: boolean }) => void;
-}
-
+/**
+ * Thin Socket.IO transport hook.
+ *
+ * IMPORTANT: This hook deliberately does NOT run the attack engine or
+ * the threat detector. The full pipeline now lives inside ScadaContext:
+ *
+ *   raw (MQTT or sim) → systemModel → attackEngine → detection → UI
+ *
+ * Here we only surface raw connection state and the latest backend
+ * `SystemState` snapshot.
+ */
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [lastState, setLastState] = useState<SystemState | null>(null);
-  const [threats, setThreats] = useState<ThreatLog[]>([]);
   const [mqttConnected, setMqttConnected] = useState(false);
-
-  // Local detection state (client-side anomaly detector).
-  const [attackScore, setAttackScore] = useState(0);
-  const [posture, setPosture] = useState<SecurityPostureLevel>('NORMAL');
-  const scoreRef = useRef(0);
-  const lastLoggedCategoryRef = useRef<string | null>(null);
-
-  // Pull current attack state from the global AttackContext.
-  const { type: attackType, active: attackActive } = useAttack();
-  const attackRef = useRef<{ type: typeof attackType; active: boolean }>({
-    type: attackType,
-    active: attackActive,
-  });
-  useEffect(() => {
-    attackRef.current = { type: attackType, active: attackActive };
-    // Reset dedup key when attack changes so a new attack always logs once.
-    lastLoggedCategoryRef.current = null;
-    if (attackActive) {
-      console.log('[Attack] Active:', attackType);
-    } else {
-      // Clear the replay buffer so the next REPLAY captures a fresh snapshot.
-      resetAttackEngine();
-      console.log('[Attack] Stopped');
-    }
-  }, [attackType, attackActive]);
-
-  // Track previous committed sample so detector can spot frozen telemetry (Replay).
-  const prevSampleRef = useRef<GridSample | null>(null);
-
-  // Helper: register a detection result into score / posture / threat log.
-  const ingestDetection = useCallback(
-    (sample: GridSample | null, prev: GridSample | null) => {
-      const result = detectThreat(sample, prev);
-      if (result.detected) {
-        const next = Math.min(20, scoreRef.current + result.score);
-        scoreRef.current = next;
-        setAttackScore(Number(next.toFixed(2)));
-        setPosture(postureFromScore(next));
-        // Dedup: only push a log when the threat category changes.
-        const cat = result.category ?? 'UNKNOWN';
-        if (lastLoggedCategoryRef.current !== cat) {
-          lastLoggedCategoryRef.current = cat;
-          setThreats((prev) => [buildThreatLog(result), ...prev].slice(0, 100));
-        }
-      } else {
-        lastLoggedCategoryRef.current = null;
-        const next = decayScore(scoreRef.current);
-        if (next !== scoreRef.current) {
-          scoreRef.current = next;
-          setAttackScore(next);
-          setPosture(postureFromScore(next));
-        }
-      }
-    },
-    [],
-  );
+  const [rawState, setRawState] = useState<SystemState | null>(null);
+  const [lastUpdateAt, setLastUpdateAt] = useState<number | null>(null);
 
   useEffect(() => {
     const socket = io(window.location.origin, {
@@ -99,85 +29,27 @@ export function useSocket() {
 
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      console.log('🔌 Socket.IO connected');
-      setIsConnected(true);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('🔌 Socket.IO disconnected');
-      setIsConnected(false);
-    });
+    socket.on('connect', () => setIsConnected(true));
+    socket.on('disconnect', () => setIsConnected(false));
 
     socket.on('state_update', (state: SystemState) => {
-      // 1. Raw SCADA data → 2. Red Team transform → 3. Detection pipeline.
-      const tampered = applyAttack(state as unknown as GridSample, attackRef.current);
-
-      // Debug — verify pipeline is running and replay is freezing values.
-      if (attackRef.current.active) {
-        console.log(
-          '[Pipeline] attack=%s voltage=%o ts=%o',
-          attackRef.current.type,
-          tampered?.voltage,
-          tampered?.timestamp,
-        );
-      }
-
-      // 3a. DoS → blackout. Commit null to UI so consumers can render N/A.
-      if (tampered === null) {
-        ingestDetection(null, prevSampleRef.current);
-        prevSampleRef.current = null;
-        setLastState(null);
-        return;
-      }
-
-      // 3b. Run detector on the (possibly tampered) sample, comparing to prev.
-      ingestDetection(tampered, prevSampleRef.current);
-      prevSampleRef.current = tampered;
-
-      // 4. Commit sample to UI state.
-      setLastState(tampered as unknown as SystemState);
+      setRawState(state);
+      setLastUpdateAt(Date.now());
     });
 
-    socket.on('threat_detected', (threat) => {
-      const threatLog: ThreatLog = {
-        id: threat.id,
-        timestamp: threat.timestamp,
-        decision_id: `DEC-${threat.id}`,
-        action: 'BLOCK',
-        layer: threat.layer,
-        threat_classification: threat.threat,
-        explanation: threat.explanation,
-        metadata: {},
-      };
-
-      setThreats((prev) => [threatLog, ...prev].slice(0, 100));
-    });
-
-    socket.on('mqtt_status', (status) => {
-      setMqttConnected(status.connected);
+    socket.on('mqtt_status', (status: { connected: boolean }) => {
+      setMqttConnected(Boolean(status?.connected));
     });
 
     return () => {
       socket.disconnect();
-      resetAttackEngine();
     };
-  }, [ingestDetection]);
-
-  const clearThreats = useCallback(() => {
-    setThreats([]);
-    scoreRef.current = 0;
-    setAttackScore(0);
-    setPosture('NORMAL');
   }, []);
 
   return {
     isConnected,
-    lastState,
-    threats,
     mqttConnected,
-    clearThreats,
-    attackScore,
-    posture,
+    rawState,
+    lastUpdateAt,
   };
 }
