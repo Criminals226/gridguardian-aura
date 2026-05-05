@@ -20,6 +20,7 @@ import {
   postureFromScore,
   decayScore,
   buildThreatLog,
+  createDetectorState,
   type SecurityPostureLevel,
 } from '@/lib/threatDetection';
 import {
@@ -152,6 +153,7 @@ export function ScadaProvider({ children }: { children: React.ReactNode }) {
   const scoreRef = useRef(0);
   const postureRef = useRef<SecurityPostureLevel>('NORMAL');
   const lastLoggedCategoryRef = useRef<string | null>(null);
+  const detectorStateRef = useRef(createDetectorState());
   // Reset dedup key when attack changes so each new attack logs once.
   useEffect(() => {
     lastLoggedCategoryRef.current = null;
@@ -190,7 +192,7 @@ export function ScadaProvider({ children }: { children: React.ReactNode }) {
       if (tampered === null) {
         const off = offlineSystem();
         // Run detector with null sample so DoS gets logged.
-        const result = detectThreat(null, prevSampleRef.current);
+        const result = detectThreat(null, prevSampleRef.current, detectorStateRef.current);
         if (result.detected) {
           const next = Math.min(20, scoreRef.current + result.score);
           scoreRef.current = next;
@@ -216,7 +218,7 @@ export function ScadaProvider({ children }: { children: React.ReactNode }) {
       const finalModeled = modelSystem(tampered);
 
       // 4. Detection
-      const result = detectThreat(finalModeled.sample, prevSampleRef.current);
+      const result = detectThreat(finalModeled.sample, prevSampleRef.current, detectorStateRef.current);
       if (result.detected) {
         const next = Math.min(20, scoreRef.current + result.score);
         scoreRef.current = next;

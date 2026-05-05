@@ -226,8 +226,9 @@ export function ScadaDiagram({
           status={meter.status}
           lines={[
             `Load: ${fmt(meter.load, 2, ' MW')}`,
-            `η: ${meter.efficiency === null ? 'N/A' : (meter.efficiency * 100).toFixed(1) + '%'}`,
-            `V: ${fmt(meter.voltage, 1, ' V')}`,
+            `A1[${meter.area1}]: ${fmt(meter.area1Load, 1, ' MW')}`,
+            `A2[${meter.area2}]: ${fmt(meter.area2Load, 1, ' MW')}`,
+            `Bill: $${fmt(meter.calculatedBill, 2, '')}`,
           ]}
         />
 
