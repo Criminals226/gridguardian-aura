@@ -20,6 +20,7 @@ import {
   postureFromScore,
   decayScore,
   buildThreatLog,
+  createDetectorState,
   type SecurityPostureLevel,
 } from '@/lib/threatDetection';
 import {
