@@ -153,6 +153,7 @@ export function ScadaProvider({ children }: { children: React.ReactNode }) {
   const scoreRef = useRef(0);
   const postureRef = useRef<SecurityPostureLevel>('NORMAL');
   const lastLoggedCategoryRef = useRef<string | null>(null);
+  const detectorStateRef = useRef(createDetectorState());
   // Reset dedup key when attack changes so each new attack logs once.
   useEffect(() => {
     lastLoggedCategoryRef.current = null;
