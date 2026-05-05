@@ -192,7 +192,7 @@ export function ScadaProvider({ children }: { children: React.ReactNode }) {
       if (tampered === null) {
         const off = offlineSystem();
         // Run detector with null sample so DoS gets logged.
-        const result = detectThreat(null, prevSampleRef.current);
+        const result = detectThreat(null, prevSampleRef.current, detectorStateRef.current);
         if (result.detected) {
           const next = Math.min(20, scoreRef.current + result.score);
           scoreRef.current = next;
@@ -218,7 +218,7 @@ export function ScadaProvider({ children }: { children: React.ReactNode }) {
       const finalModeled = modelSystem(tampered);
 
       // 4. Detection
-      const result = detectThreat(finalModeled.sample, prevSampleRef.current);
+      const result = detectThreat(finalModeled.sample, prevSampleRef.current, detectorStateRef.current);
       if (result.detected) {
         const next = Math.min(20, scoreRef.current + result.score);
         scoreRef.current = next;
