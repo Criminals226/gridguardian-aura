@@ -27,14 +27,22 @@ export interface SmartFeederState {
   voltage: number | null;       // after transmission loss
   transmissionLoss: number | null;
   frequency: number | null;
+  feederLoad: number | null;    // MW flowing through the feeder
   status: ComponentStatus;
 }
 
+export type AreaState = 'ON' | 'OFF';
+
 export interface SmartMeterState {
-  load: number | null;          // MW delivered to consumers
+  load: number | null;          // MW delivered to consumers (sum of areas)
   efficiency: number | null;    // 0..1
   voltage: number | null;       // mirrors feeder voltage at meter point
   status: ComponentStatus;
+  area1: AreaState;
+  area2: AreaState;
+  area1Load: number | null;     // MW consumed by industrial area
+  area2Load: number | null;     // MW consumed by residential area
+  calculatedBill: number | null;// $ accumulated bill
 }
 
 export interface ModeledSystem {
@@ -112,6 +120,34 @@ export function modelSystem(raw: GridSample): ModeledSystem {
       ? Number((plantGeneration * efficiency).toFixed(2))
       : null;
 
+  // Areas come from the raw sample (backend control state).
+  const rawArea1 = (raw as Record<string, unknown>).area1;
+  const rawArea2 = (raw as Record<string, unknown>).area2;
+  const area1: AreaState = rawArea1 === 'OFF' ? 'OFF' : 'ON';
+  const area2: AreaState = rawArea2 === 'OFF' ? 'OFF' : 'ON';
+
+  // Split meter load between active areas: industrial 60% / residential 40%.
+  const activeShare = (area1 ? 0.6 : 0) + (area2 ? 0.4 : 0);
+  const area1Load =
+    meterLoad !== null && area1 === 'ON'
+      ? Number(((meterLoad * 0.6) / Math.max(activeShare, 0.0001)).toFixed(2))
+      : meterLoad !== null
+      ? 0
+      : null;
+  const area2Load =
+    meterLoad !== null && area2 === 'ON'
+      ? Number(((meterLoad * 0.4) / Math.max(activeShare, 0.0001)).toFixed(2))
+      : meterLoad !== null
+      ? 0
+      : null;
+
+  const priceRate = pickNumber((raw as Record<string, unknown>).price_rate) ?? 0.25;
+  const calculatedBill =
+    pickNumber((raw as Record<string, unknown>).calculated_bill) ??
+    (meterLoad !== null ? Number((meterLoad * priceRate).toFixed(2)) : null);
+
+  const feederLoad = meterLoad;
+
   const plantStatus = worst(
     classify(plantVoltage, NOMINAL_V, 15, 30),
     classify(plantFrequency, NOMINAL_F, 0.5, 1),
@@ -153,6 +189,7 @@ export function modelSystem(raw: GridSample): ModeledSystem {
       voltage: feederVoltage,
       transmissionLoss,
       frequency: plantFrequency,
+      feederLoad,
       status: feederStatus,
     },
     meter: {
@@ -160,6 +197,11 @@ export function modelSystem(raw: GridSample): ModeledSystem {
       efficiency,
       voltage: feederVoltage,
       status: meterStatus,
+      area1,
+      area2,
+      area1Load,
+      area2Load,
+      calculatedBill,
     },
     sample,
   };
@@ -168,8 +210,11 @@ export function modelSystem(raw: GridSample): ModeledSystem {
 export function offlineSystem(): ModeledSystem {
   return {
     plant: { voltage: null, frequency: null, generation: null, rpm: null, status: 'OFFLINE' },
-    feeder: { voltage: null, transmissionLoss: null, frequency: null, status: 'OFFLINE' },
-    meter: { load: null, efficiency: null, voltage: null, status: 'OFFLINE' },
+    feeder: { voltage: null, transmissionLoss: null, frequency: null, feederLoad: null, status: 'OFFLINE' },
+    meter: {
+      load: null, efficiency: null, voltage: null, status: 'OFFLINE',
+      area1: 'OFF', area2: 'OFF', area1Load: null, area2Load: null, calculatedBill: null,
+    },
     sample: {
       voltage: null,
       frequency: null,
