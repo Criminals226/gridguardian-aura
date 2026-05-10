@@ -15,12 +15,14 @@ import {
   X,
   FlaskConical,
   Shield,
+  Network,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'SCADA Diagram', href: '/diagram', icon: Network },
   { name: 'Attack Lab', href: '/attack-lab', icon: FlaskConical },
   { name: 'Security', href: '/security', icon: Shield },
   { name: 'Historical', href: '/historical', icon: BarChart3 },
