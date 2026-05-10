@@ -7,21 +7,14 @@ import { GaugeCircular } from '@/components/scada/GaugeCircular';
 import { MeterBar } from '@/components/scada/MeterBar';
 import { AreaSwitch } from '@/components/scada/AreaSwitch';
 import { StatusIndicator } from '@/components/scada/StatusIndicator';
-import { ScadaDiagram } from '@/components/scada/ScadaDiagram';
 import { toast } from 'sonner';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Zap, 
-  Gauge, 
-  Activity, 
-  DollarSign, 
+import {
+  Zap,
+  Activity,
+  DollarSign,
   Radio,
   Server,
   Cpu,
-  AlertTriangle,
-  RotateCcw,
-  Monitor,
-  LayoutGrid,
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -136,166 +129,143 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Tabs */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="bg-card border border-border">
-          <TabsTrigger value="overview" className="font-mono text-xs gap-2 data-[state=active]:bg-sidebar-accent">
-            <LayoutGrid className="h-4 w-4" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="diagram" className="font-mono text-xs gap-2 data-[state=active]:bg-sidebar-accent">
-            <Monitor className="h-4 w-4" />
-            SCADA Diagram
-          </TabsTrigger>
-        </TabsList>
+      {/* Main metrics row */}
+      {(() => {
+        const gen = formatPower(effectiveState?.gen_mw ?? 0);
+        const load = formatPower(effectiveState?.load_mw ?? 0);
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <DataCard
+              title="Generation"
+              value={gen.value}
+              unit={gen.unit}
+              icon={Zap}
+              status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
+              subtitle={`RPM: ${effectiveState?.gen_rpm ?? 0} | Status: ${effectiveState?.status ?? 'N/A'}`}
+            />
+            <DataCard
+              title="Load Consumption"
+              value={load.value}
+              unit={load.unit}
+              icon={Activity}
+              status="info"
+              subtitle="Active power demand"
+            />
+            <DataCard
+              title="Current Bill"
+              value={effectiveState?.calculated_bill ?? 0}
+              unit="$"
+              icon={DollarSign}
+              status="normal"
+              subtitle="Calculated usage cost"
+            />
+            <DataCard
+              title="Security Level"
+              value={effectiveState?.security_level ?? 'NORMAL'}
+              icon={Server}
+              status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
+              subtitle={`Attack Score: ${(effectiveState?.attack_score ?? 0).toFixed(2)}`}
+            />
+          </div>
+        );
+      })()}
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-6">
-          {/* Main metrics row */}
+      {/* Gauges and meters row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
+            Power Quality Metrics
+          </h2>
+          <div className="flex justify-around">
+            <GaugeCircular
+              value={effectiveState?.voltage ?? 230}
+              min={200}
+              max={260}
+              unit="V"
+              label="Voltage"
+              warningThreshold={245}
+              criticalThreshold={255}
+            />
+            <GaugeCircular
+              value={effectiveState?.frequency ?? 50}
+              min={48}
+              max={52}
+              unit="Hz"
+              label="Frequency"
+              warningThreshold={50.5}
+              criticalThreshold={51.5}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
+            Power Distribution
+          </h2>
           {(() => {
-            const gen = formatPower(effectiveState?.gen_mw ?? 0);
-            const load = formatPower(effectiveState?.load_mw ?? 0);
+            const genFmt = formatPower(effectiveState?.gen_mw ?? 0);
+            const loadFmt = formatPower(effectiveState?.load_mw ?? 0);
             return (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <DataCard
-                  title="Generation"
-                  value={gen.value}
-                  unit={gen.unit}
-                  icon={Zap}
-                  status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
-                  subtitle={`RPM: ${effectiveState?.gen_rpm ?? 0} | Status: ${effectiveState?.status ?? 'N/A'}`}
+              <div className="space-y-6">
+                <MeterBar
+                  value={genFmt.value}
+                  max={genFmt.unit === 'kW' ? 20 : 20000}
+                  label="Generation"
+                  unit={genFmt.unit}
+                  warningThreshold={genFmt.unit === 'kW' ? 16 : 16000}
+                  criticalThreshold={genFmt.unit === 'kW' ? 19 : 19000}
                 />
-                <DataCard
-                  title="Load Consumption"
-                  value={load.value}
-                  unit={load.unit}
-                  icon={Activity}
-                  status="info"
-                  subtitle="Active power demand"
-                />
-                <DataCard
-                  title="Current Bill"
-                  value={effectiveState?.calculated_bill ?? 0}
-                  unit="$"
-                  icon={DollarSign}
-                  status="normal"
-                  subtitle="Calculated usage cost"
-                />
-                <DataCard
-                  title="Security Level"
-                  value={effectiveState?.security_level ?? 'NORMAL'}
-                  icon={Server}
-                  status={getStatusLevel(effectiveState?.security_level || 'NORMAL')}
-                  subtitle={`Attack Score: ${(effectiveState?.attack_score ?? 0).toFixed(2)}`}
+                <MeterBar
+                  value={loadFmt.value}
+                  max={loadFmt.unit === 'kW' ? 20 : 20000}
+                  label="Load"
+                  unit={loadFmt.unit}
+                  warningThreshold={loadFmt.unit === 'kW' ? 16 : 16000}
+                  criticalThreshold={loadFmt.unit === 'kW' ? 19 : 19000}
                 />
               </div>
             );
           })()}
+        </div>
 
-          {/* Gauges and meters row */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="rounded-lg border border-border bg-card p-6">
-              <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
-                Power Quality Metrics
-              </h2>
-              <div className="flex justify-around">
-                <GaugeCircular
-                  value={effectiveState?.voltage ?? 230}
-                  min={200}
-                  max={260}
-                  unit="V"
-                  label="Voltage"
-                  warningThreshold={245}
-                  criticalThreshold={255}
-                />
-                <GaugeCircular
-                  value={effectiveState?.frequency ?? 50}
-                  min={48}
-                  max={52}
-                  unit="Hz"
-                  label="Frequency"
-                  warningThreshold={50.5}
-                  criticalThreshold={51.5}
-                />
-              </div>
+        <div className="rounded-lg border border-border bg-card p-6">
+          <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
+            Distribution Areas
+          </h2>
+          <div className="space-y-4">
+            <AreaSwitch
+              name="Area 1"
+              state={effectiveState?.area1 ?? 'OFF'}
+              onToggle={() => handleControl('toggle_area1')}
+              loading={loadingControl === 'toggle_area1'}
+            />
+            <AreaSwitch
+              name="Area 2"
+              state={effectiveState?.area2 ?? 'OFF'}
+              onToggle={() => handleControl('toggle_area2')}
+              loading={loadingControl === 'toggle_area2'}
+            />
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between text-sm font-mono">
+              <span className="text-muted-foreground">Price Rate</span>
+              <span className="text-foreground">${effectiveState?.price_rate?.toFixed(2) ?? '0.25'}/unit</span>
             </div>
-
-            <div className="rounded-lg border border-border bg-card p-6">
-              <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
-                Power Distribution
-              </h2>
-              {(() => {
-                const genFmt = formatPower(effectiveState?.gen_mw ?? 0);
-                const loadFmt = formatPower(effectiveState?.load_mw ?? 0);
-                return (
-                  <div className="space-y-6">
-                    <MeterBar
-                      value={genFmt.value}
-                      max={genFmt.unit === 'kW' ? 20 : 20000}
-                      label="Generation"
-                      unit={genFmt.unit}
-                      warningThreshold={genFmt.unit === 'kW' ? 16 : 16000}
-                      criticalThreshold={genFmt.unit === 'kW' ? 19 : 19000}
-                    />
-                    <MeterBar
-                      value={loadFmt.value}
-                      max={loadFmt.unit === 'kW' ? 20 : 20000}
-                      label="Load"
-                      unit={loadFmt.unit}
-                      warningThreshold={loadFmt.unit === 'kW' ? 16 : 16000}
-                      criticalThreshold={loadFmt.unit === 'kW' ? 19 : 19000}
-                    />
-                  </div>
-                );
-              })()}
+            <div className="flex items-center justify-between text-sm font-mono mt-2">
+              <span className="text-muted-foreground">Last Update</span>
+              <span className="text-foreground">{effectiveState?.last_update ?? '--:--:--'}</span>
             </div>
-
-            <div className="rounded-lg border border-border bg-card p-6">
-              <h2 className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-6">
-                Distribution Areas
-              </h2>
-              <div className="space-y-4">
-                <AreaSwitch
-                  name="Area 1"
-                  state={effectiveState?.area1 ?? 'OFF'}
-                  onToggle={() => handleControl('toggle_area1')}
-                  loading={loadingControl === 'toggle_area1'}
-                />
-                <AreaSwitch
-                  name="Area 2"
-                  state={effectiveState?.area2 ?? 'OFF'}
-                  onToggle={() => handleControl('toggle_area2')}
-                  loading={loadingControl === 'toggle_area2'}
-                />
-              </div>
-              
-
-              <div className="mt-4 pt-4 border-t border-border">
-                <div className="flex items-center justify-between text-sm font-mono">
-                  <span className="text-muted-foreground">Price Rate</span>
-                  <span className="text-foreground">${effectiveState?.price_rate?.toFixed(2) ?? '0.25'}/unit</span>
-                </div>
-                <div className="flex items-center justify-between text-sm font-mono mt-2">
-                  <span className="text-muted-foreground">Last Update</span>
-                  <span className="text-foreground">{effectiveState?.last_update ?? '--:--:--'}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm font-mono mt-2">
-                  <span className="text-muted-foreground">System Lock</span>
-                  <StatusIndicator 
-                    status={effectiveState?.system_locked ? 'critical' : 'normal'}
-                    label={effectiveState?.system_locked ? 'LOCKED' : 'UNLOCKED'}
-                  />
-                </div>
-              </div>
+            <div className="flex items-center justify-between text-sm font-mono mt-2">
+              <span className="text-muted-foreground">System Lock</span>
+              <StatusIndicator
+                status={effectiveState?.system_locked ? 'critical' : 'normal'}
+                label={effectiveState?.system_locked ? 'LOCKED' : 'UNLOCKED'}
+              />
             </div>
           </div>
-        </TabsContent>
-
-        {/* SCADA Diagram Tab */}
-        <TabsContent value="diagram">
-          <ScadaDiagram />
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
 
       {/* System info footer */}
       <div className="rounded-lg border border-border bg-card p-4">

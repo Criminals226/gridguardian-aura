@@ -16,6 +16,7 @@ import AttackLab from "@/pages/AttackLab";
 import Security from "@/pages/Security";
 import Historical from "@/pages/Historical";
 import Logs from "@/pages/Logs";
+import Diagram from "@/pages/Diagram";
 import NotFound from "@/pages/NotFound";
 
 // Layouts
@@ -97,6 +98,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="diagram" element={<Diagram />} />
         <Route path="attack-lab" element={<AttackLab />} />
         <Route path="security" element={<Security />} />
         <Route path="historical" element={<Historical />} />
